@@ -1,0 +1,1 @@
+ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'Lunas';

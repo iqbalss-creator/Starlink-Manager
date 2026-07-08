@@ -1,1 +1,0 @@
-ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS comment TEXT;

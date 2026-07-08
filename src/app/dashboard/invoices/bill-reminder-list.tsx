@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { UpdateExpiryDialog } from '@/components/dashboard/update-expiry-dialog'
 import { MessageCircle, AlertTriangle, Clock, Users } from 'lucide-react'
 
-function getDaysUntilExpiry(expiryDate: string | null): number | null {
+function getDaysUntilExpiry(expiryDate: string | null | undefined): number | null {
   if (!expiryDate) return null
   const now = new Date()
   const expiry = new Date(expiryDate)

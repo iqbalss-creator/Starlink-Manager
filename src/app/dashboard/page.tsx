@@ -62,7 +62,7 @@ export default async function DashboardPage() {
     .eq('payment_status', 'Belum Lunas')
 
   const totalUnpaid = unpaidVouchers?.reduce((acc, curr) => {
-    const price = curr.packages && !Array.isArray(curr.packages) ? curr.packages.price : 0
+    const price = curr.packages ? (Array.isArray(curr.packages) ? (curr.packages[0] as any)?.price : (curr.packages as any)?.price) : 0
     return acc + (Number(price) || 0)
   }, 0) || 0
 

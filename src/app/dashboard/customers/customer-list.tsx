@@ -489,11 +489,9 @@ export function CustomerList({
           </Button>
           {userRole !== 'reviewer' && (
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-[#00A76F] hover:bg-[#007867] text-white gap-2">
-                  <Plus className="w-4 h-4" />
-                  Pelanggan Baru
-                </Button>
+              <DialogTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2 bg-[#00A76F] hover:bg-[#007867] text-white gap-2">
+                <Plus className="w-4 h-4" />
+                Pelanggan Baru
               </DialogTrigger>
               <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>

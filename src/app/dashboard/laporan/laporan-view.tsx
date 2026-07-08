@@ -152,7 +152,7 @@ export function LaporanView({
                 <YAxis tick={{ fontSize: 11, fill: '#888888' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip
                   cursor={{ fill: 'transparent' }}
-                  formatter={(v: any, n: string) => [`Rp ${Number(v).toLocaleString('id-ID')}`, n === 'total' ? 'Omzet Kotor' : 'Laba Bersih']}
+                  formatter={(v: any, n: any) => [`Rp ${Number(v).toLocaleString('id-ID')}`, n === 'total' ? 'Omzet Kotor' : 'Laba Bersih']}
                   contentStyle={{ borderRadius: '8px', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))', fontSize: '12px', color: 'hsl(var(--foreground))' }}
                   itemStyle={{ color: 'hsl(var(--foreground))' }}
                 />

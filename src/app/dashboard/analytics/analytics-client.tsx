@@ -16,7 +16,6 @@ import {
   Legend
 } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatBytes } from '@/utils/format'
 
 type RevenueData = { month: string; total: number }
 type MethodData = { name: string; value: number }

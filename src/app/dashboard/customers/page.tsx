@@ -11,5 +11,5 @@ export default async function CustomersPage() {
   ])
   const role = await getUserRole()
 
-  return <CustomerList initialCustomers={customers} packages={packages} contacts={contacts} userRole={role} />
+  return <CustomerList initialCustomers={customers as any} packages={packages} contacts={contacts} userRole={role} />
 }

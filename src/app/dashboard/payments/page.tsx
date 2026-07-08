@@ -10,5 +10,5 @@ export default async function PaymentsPage() {
   const customers = await getCustomers()
   const role = await getUserRole()
 
-  return <PaymentList initialPayments={payments} customers={customers} userRole={role} />
+  return <PaymentList initialPayments={payments} customers={customers as any} userRole={role} />
 }

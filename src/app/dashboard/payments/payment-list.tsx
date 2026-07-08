@@ -134,11 +134,9 @@ export function PaymentList({
             Export CSV
           </Button>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-[#00A76F] hover:bg-[#007867] text-white gap-2">
-                <Plus className="w-4 h-4" />
-                Catat Pembayaran
-              </Button>
+            <DialogTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-8 px-3 py-2 bg-[#00A76F] hover:bg-[#007867] text-white gap-2">
+              <Plus className="w-4 h-4" />
+              Catat Pembayaran
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>

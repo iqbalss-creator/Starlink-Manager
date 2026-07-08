@@ -36,7 +36,7 @@ export function CustomerChart({ data }: { data: DataPoint[] }) {
             ))}
           </Pie>
             <Tooltip
-              formatter={(value: number, name: string) => [value, name]}
+              formatter={(value: any, name: any) => [value, name]}
               contentStyle={{
                 borderRadius: '8px',
                 border: '1px solid hsl(var(--border))',

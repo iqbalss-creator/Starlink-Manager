@@ -356,9 +356,13 @@ export async function createCustomer(formData: FormData) {
 
   // Ambil profile mikrotik dari package
   let profile = 'default'
+  let pkgData: any = null
   if (package_id) {
-    const { data: pkg } = await supabase.from('packages').select('name').eq('id', package_id).single()
-    if (pkg) profile = pkg.name
+    const { data: pkg } = await supabase.from('packages').select('name, price').eq('id', package_id).single()
+    if (pkg) {
+      profile = pkg.name
+      pkgData = pkg
+    }
   }
 
   // 2. Loop generate sebanyak qty (Voucher)
@@ -425,10 +429,10 @@ export async function createCustomer(formData: FormData) {
       throw new Error("Gagal membuat voucher di database: " + vErr.message)
     }
 
-    if (payment_status === 'Lunas' && package_id && pkg && pkg.price > 0) {
+    if (payment_status === 'Lunas' && package_id && pkgData && pkgData.price > 0) {
       await supabase.from('payments').insert([{
         customer_id: cust.id,
-        amount: pkg.price,
+        amount: pkgData.price,
         payment_date: new Date().toISOString(),
         method: 'Tunai',
         notes: `Pembelian Voucher: ${username}`
@@ -785,7 +789,7 @@ export async function updateVoucherPaymentStatus(voucherId: string, newStatus: s
   
   // 3. Sync payments table
   if (v && v.packages) {
-    const price = Array.isArray(v.packages) ? v.packages[0]?.price : v.packages?.price
+    const price = Array.isArray(v.packages) ? (v.packages[0] as any)?.price : (v.packages as any)?.price
     if (price && price > 0) {
       if (newStatus === 'Belum Lunas') {
         // Find and delete the latest payment for this amount

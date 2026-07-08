@@ -8,10 +8,10 @@ export async function getUserRole() {
 
     const session = JSON.parse(sessionStr)
     
-    // Jika role tidak ada di cookie lama, anggap sebagai admin utama
-    return session.role || 'admin'
+    // Jika role tidak ada di cookie lama, anggap sebagai reviewer
+    return session.role || 'reviewer'
   } catch (e) {
     console.error('Error parsing role cookie', e)
-    return 'admin' // fallback safety for the owner
+    return 'reviewer' // fallback safety
   }
 }

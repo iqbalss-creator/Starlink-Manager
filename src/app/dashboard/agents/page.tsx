@@ -32,7 +32,10 @@ export default async function AgentsPage() {
             <DialogHeader>
               <DialogTitle>Tambah Agen Baru</DialogTitle>
             </DialogHeader>
-            <form action={addAgent} className="space-y-4 pt-4">
+            <form action={async (formData) => {
+              'use server'
+              await addAgent(formData)
+            }} className="space-y-4 pt-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Nama Agen / Reseller</Label>
                 <Input id="name" name="name" placeholder="Misal: Konter Ali" required />

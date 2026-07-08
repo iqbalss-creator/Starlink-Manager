@@ -84,7 +84,7 @@ export function LogClient({ initialLogs }: { initialLogs: LogEntry[] }) {
           </div>
           <div className="w-full md:w-[120px] space-y-2">
             <Label>Tanggal</Label>
-            <Select value={selectedDate} onValueChange={setSelectedDate}>
+            <Select value={selectedDate} onValueChange={(v) => v && setSelectedDate(v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Semua" />
               </SelectTrigger>
@@ -97,7 +97,7 @@ export function LogClient({ initialLogs }: { initialLogs: LogEntry[] }) {
           </div>
           <div className="w-full md:w-[160px] space-y-2">
             <Label>Bulan</Label>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <Select value={selectedMonth} onValueChange={(v) => v && setSelectedMonth(v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Semua Bulan" />
               </SelectTrigger>
@@ -110,7 +110,7 @@ export function LogClient({ initialLogs }: { initialLogs: LogEntry[] }) {
           </div>
           <div className="w-full md:w-[140px] space-y-2">
             <Label>Tahun</Label>
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <Select value={selectedYear} onValueChange={(v) => v && setSelectedYear(v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Semua Tahun" />
               </SelectTrigger>

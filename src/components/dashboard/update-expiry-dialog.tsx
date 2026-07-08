@@ -45,20 +45,16 @@ export function UpdateExpiryDialog({ customer, size = 'sm' }: UpdateExpiryDialog
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size={size === 'sm' ? 'icon' : 'default'}
+      <DialogTrigger
           className={
             size === 'sm'
-              ? 'h-8 w-8 text-muted-foreground hover:text-foreground'
-              : 'gap-2 text-muted-foreground hover:text-foreground'
+              ? 'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent h-8 w-8 text-muted-foreground hover:text-foreground'
+              : 'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent h-9 px-4 py-2 gap-2 text-muted-foreground hover:text-foreground'
           }
           title="Ubah Tanggal Jatuh Tempo"
         >
           <CalendarClock className="h-4 w-4" />
           {size !== 'sm' && 'Ubah Tanggal'}
-        </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[380px]">
         <DialogHeader>

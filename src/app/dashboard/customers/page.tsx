@@ -3,6 +3,8 @@ import { getPackages } from '../packages/actions'
 import { CustomerList } from './customer-list'
 import { getUserRole } from '@/utils/roles'
 
+export const dynamic = 'force-dynamic'
+
 export default async function CustomersPage() {
   const [customers, packages, contacts] = await Promise.all([
     getCustomers(),

@@ -39,7 +39,7 @@ export async function login(formData: FormData) {
       full_name: user.full_name
     }), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: false, // Set false sementara agar bisa jalan di IP HTTP biasa
       maxAge: 60 * 60 * 24 * 7, // 1 minggu
       path: '/',
     })

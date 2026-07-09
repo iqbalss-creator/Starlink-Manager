@@ -3,6 +3,8 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { getUserRole } from '@/utils/roles'
 import { AutoLogoutTimer } from "@/components/dashboard/auto-logout-provider"
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardLayout({
   children,
 }: {

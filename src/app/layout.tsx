@@ -10,7 +10,7 @@ const publicSans = Public_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Wi-Fi Allstar Manager",
+  title: "Allstar Manager",
   description: "Sistem Manajemen Pelanggan Wi-Fi Allstar",
 };
 

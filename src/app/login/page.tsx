@@ -19,7 +19,7 @@ import { Loader2, Lock, User, AlertCircle, Satellite } from "lucide-react";
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [appName, setAppName] = useState("Starlink Manager");
+  const [appName, setAppName] = useState("Allstar Manager");
   const [appLogo, setAppLogo] = useState("");
 
   useEffect(() => {
@@ -76,9 +76,7 @@ export default function LoginPage() {
         {appLogo ? (
           <img src={appLogo} alt="Logo" className="h-28 md:h-32 mb-6 object-contain drop-shadow-2xl" />
         ) : (
-          <div className="w-16 h-16 bg-[#00A76F] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-[#00A76F]/20">
-            <Satellite className="w-8 h-8 text-white" />
-          </div>
+          <img src="/icon.png" alt="Allstar Manager Logo" className="h-28 md:h-32 mb-6 object-contain drop-shadow-2xl" />
         )}
         <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">
           {appName}

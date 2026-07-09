@@ -26,18 +26,16 @@ export default function TentangPage() {
           <h1 className="text-[24.5px] font-semibold text-foreground tracking-tight">Tentang Aplikasi</h1>
         </div>
         <p className="text-sm text-muted-foreground font-medium">
-          Informasi versi dan lisensi Starlink Manager
+          Informasi versi dan lisensi Allstar Manager
         </p>
       </div>
 
       {/* App info card */}
       <div className="bg-card rounded-2xl p-6 shadow-[rgba(145,158,171,0.2)_0px_0px_2px_0px,rgba(145,158,171,0.12)_0px_12px_24px_-4px] dark:shadow-none dark:border">
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-[#00A76F] flex items-center justify-center">
-            <span className="text-white text-2xl font-bold">S</span>
-          </div>
+          <img src="/icon.png" alt="Allstar Manager Logo" className="w-16 h-16 object-contain drop-shadow-md" />
           <div>
-            <h2 className="text-xl font-bold">Starlink Manager</h2>
+            <h2 className="text-xl font-bold">Allstar Manager</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="bg-[#C8FAD6] text-[#007867] px-2 py-0.5 rounded-full text-xs font-bold">v0.1.0</span>
               <span className="text-xs text-muted-foreground">Rilis: Juli 2026</span>
@@ -45,7 +43,7 @@ export default function TentangPage() {
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          Starlink Manager adalah aplikasi manajemen pelanggan internet berbasis Starlink. 
+          Allstar Manager adalah aplikasi manajemen pelanggan internet berbasis Starlink. 
           Dibangun dengan Next.js 16, Supabase, dan Tailwind CSS untuk performa dan skalabilitas terbaik.
         </p>
 

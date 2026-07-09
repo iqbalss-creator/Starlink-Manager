@@ -115,7 +115,7 @@ export function AppSidebar({
   userRole,
   ...props
 }: React.ComponentProps<typeof Sidebar> & { userRole?: string }) {
-  const [appName, setAppName] = React.useState("Starlink Manager");
+  const [appName, setAppName] = React.useState("Allstar Manager");
   const [appLogo, setAppLogo] = React.useState("");
 
   React.useEffect(() => {
@@ -151,7 +151,7 @@ export function AppSidebar({
   }, []);
 
   const words = appName.split(" ");
-  const firstWord = words[0] || "Starlink";
+  const firstWord = words[0] || "Allstar";
   const restWords = words.length > 1 ? words.slice(1).join(" ") : "";
 
   return (
@@ -164,7 +164,7 @@ export function AppSidebar({
           {appLogo ? (
             <img src={appLogo} alt="Logo" className="w-8 h-8 object-contain" />
           ) : (
-            <Satellite className="h-6 w-6 text-[#00A76F]" />
+            <img src="/icon.png" alt="Logo" className="w-8 h-8 object-contain" />
           )}
           <span>
             {firstWord} <span className="text-[#00A76F]">{restWords}</span>

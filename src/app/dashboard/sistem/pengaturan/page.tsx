@@ -61,7 +61,7 @@ export default function PengaturanPage() {
               className={inputClass}
               value={settings.appName}
               onChange={e => setSettings(s => ({ ...s, appName: e.target.value }))}
-              placeholder="Starlink Manager"
+              placeholder="Allstar Manager"
             />
           ),
         },

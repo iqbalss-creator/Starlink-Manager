@@ -123,8 +123,8 @@ export function LogClient({ initialLogs }: { initialLogs: LogEntry[] }) {
           </div>
         </div>
 
-        <div className="rounded-md border overflow-hidden">
-          <table className="w-full text-sm text-left">
+        <div className="rounded-md border overflow-x-auto">
+          <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-xs uppercase bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="px-6 py-4 font-semibold">Tanggal & Jam</th>

@@ -643,7 +643,7 @@ export function CustomerList({
       {/* Table */}
       <div className="bg-card rounded-2xl shadow-[rgba(145,158,171,0.2)_0px_0px_2px_0px,rgba(145,158,171,0.12)_0px_12px_24px_-4px] dark:shadow-none dark:border overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-[12px] font-semibold text-foreground bg-muted border-b border-border">
               <tr>
                 <th className="px-6 py-4">NAMA & KONTAK</th>

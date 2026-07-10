@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Printer, Ticket } from 'lucide-react'
 
-export function MassClient({ packages }: { packages: any[] }) {
+export function MassClient({ packages, hotspotServers }: { packages: any[], hotspotServers?: any[] }) {
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
@@ -18,11 +18,13 @@ export function MassClient({ packages }: { packages: any[] }) {
     setIsPending(true)
     setError('')
     try {
-      const generated = await createMassVouchers(formData)
-      if (generated && generated.length > 0) {
+      const res = await createMassVouchers(formData)
+      if (res && res.error) {
+        setError(res.error)
+      } else if (res && res.success && res.generatedVouchers && res.generatedVouchers.length > 0) {
         // Build query string for the print page
         const q = new URLSearchParams()
-        q.set('users', generated.join(','))
+        q.set('users', res.generatedVouchers.join(','))
         router.push('/dashboard/vouchers/print?' + q.toString())
       } else {
         setError('Tidak ada voucher yang berhasil digenerate.')
@@ -93,7 +95,22 @@ export function MassClient({ packages }: { packages: any[] }) {
 
             <div className="space-y-2">
               <Label htmlFor="server">Server Hotspot (MikroTik)</Label>
-              <Input id="server" name="server" defaultValue="allstar" required />
+              {hotspotServers && hotspotServers.length > 0 ? (
+                <select
+                  id="server"
+                  name="server"
+                  required
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+                >
+                  {hotspotServers.map((s, idx) => (
+                    <option key={idx} value={s.name} className="text-foreground bg-background">
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input id="server" name="server" defaultValue="allstar" required placeholder="Nama Server (contoh: allstar)" />
+              )}
             </div>
 
             <div className="pt-4">

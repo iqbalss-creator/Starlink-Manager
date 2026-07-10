@@ -50,12 +50,14 @@ export function CustomerList({
   initialCustomers, 
   packages,
   contacts = [],
-  userRole
+  userRole,
+  hotspotServers = []
 }: { 
   initialCustomers: Customer[], 
   packages: Package[],
   contacts?: Contact[],
-  userRole?: string
+  userRole?: string,
+  hotspotServers?: string[]
 }) {
   const [isPending, startTransition] = useTransition()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -67,7 +69,9 @@ export function CustomerList({
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<typeof STATUS_OPTIONS[number]>('Semua')
   const [packageFilter, setPackageFilter] = useState<string>('Semua')
-  const [mtServers, setMtServers] = useState<string[]>(['all', 'hotspot-allstar'])
+  const [mtServers, setMtServers] = useState<string[]>(
+    hotspotServers.length > 0 ? ['all', ...hotspotServers] : ['all', 'hotspot-allstar']
+  )
 
   // Form states
   const [newName, setNewName] = useState('')
@@ -568,8 +572,8 @@ export function CustomerList({
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="server">Server MikroTik</Label>
-                  <select id="server" name="server" defaultValue="all" className={selectClass}>
-                    {mtServers.map(s => <option key={s} value={s}>{s}</option>)}
+                  <select id="server" name="server" className={selectClass} required>
+                    {mtServers.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="grid gap-2">
@@ -762,7 +766,7 @@ export function CustomerList({
                                   <div className="text-foreground text-sm font-medium">
                                     {new Date(v.expiry_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   </div>
-                                ) : v.status === 'Nonaktif' ? (
+                                ) : v?.status === 'Nonaktif' ? (
                                   <span className="inline-flex items-center gap-1.5 bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">
                                     Terhapus / Expired
                                   </span>
@@ -921,8 +925,8 @@ export function CustomerList({
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="add-server" className="text-xs">Server MikroTik</Label>
-                  <select id="add-server" name="server" defaultValue="all" className={selectClass}>
-                    {mtServers.map(s => <option key={s} value={s}>{s}</option>)}
+                  <select id="add-server" name="server" className={selectClass} required>
+                    {mtServers.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="grid gap-1.5">

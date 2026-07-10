@@ -13,10 +13,10 @@ async function rebuildClean() {
     console.log('Connected, pulling and running clean build...')
     
     const cmds = [
-      'git pull origin main',
-      'rm -rf .next',
+      'rm -rf node_modules .next',
+      'npm install',
       'npm run build',
-      'pm2 restart starlink-manager'
+      'pm2 reload all'
     ]
 
     for (const cmd of cmds) {

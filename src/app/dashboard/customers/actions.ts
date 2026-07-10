@@ -871,7 +871,7 @@ export async function createMassVouchers(formData: FormData) {
       if ((err as Error).message.includes('already exists')) {
         continue;
       }
-      throw new Error(`Gagal membuat user di MikroTik: ${(err as Error).message}`)
+      return { error: `Gagal membuat user di MikroTik: ${(err as Error).message}` }
     }
 
     const { error: vErr } = await supabase.from('vouchers').insert([{
@@ -887,7 +887,7 @@ export async function createMassVouchers(formData: FormData) {
     
     if (vErr) {
       console.error("Gagal insert voucher masal:", vErr)
-      throw new Error("Gagal membuat voucher di database: " + vErr.message)
+      return { error: "Gagal membuat voucher di database: " + vErr.message }
     }
 
     generatedVouchers.push(username)
@@ -896,7 +896,7 @@ export async function createMassVouchers(formData: FormData) {
   revalidatePath('/dashboard/vouchers')
   revalidatePath('/dashboard/log-voucher')
   
-  return generatedVouchers
+  return { success: true, generatedVouchers }
 }
 
 export async function getMassVoucherBatches() {

@@ -820,3 +820,79 @@ export async function updateVoucherPaymentStatus(voucherId: string, newStatus: s
   revalidatePath('/dashboard/customers')
   revalidatePath('/dashboard')
 }
+
+export async function createMassVouchers(formData: FormData) {
+  const qtyStr = formData.get('quantity') as string
+  const package_id = formData.get('package_id') as string | null
+  const server = formData.get('server') as string || 'all'
+  const lengthStr = formData.get('length') as string || '5'
+  
+  const qty = parseInt(qtyStr) || 1
+  const length = parseInt(lengthStr) || 5
+
+  const supabase = await createClient()
+
+  let profile = 'default'
+  let pkgData: any = null
+  if (package_id) {
+    const { data: pkg } = await supabase.from('packages').select('name, price').eq('id', package_id).single()
+    if (pkg) {
+      profile = pkg.name
+      pkgData = pkg
+    }
+  }
+
+  const generatedVouchers: string[] = []
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+  for (let i = 0; i < qty; i++) {
+    let username = ''
+    for (let j = 0; j < length; j++) {
+      username += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    const password = username
+
+    const today = new Date()
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+    const mikhmonDate = `${months[today.getMonth()]}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
+    const commentStr = `vc-${mikhmonDate}-mass`
+
+    try {
+      await mikrotikQuery('/ip/hotspot/user/add', [
+        `=name=${username}`,
+        `=password=${password}`,
+        `=profile=${profile}`,
+        `=server=${server}`,
+        `=comment=${commentStr}`
+      ])
+    } catch (err) {
+      if ((err as Error).message.includes('already exists')) {
+        continue;
+      }
+      throw new Error(`Gagal membuat user di MikroTik: ${(err as Error).message}`)
+    }
+
+    const { error: vErr } = await supabase.from('vouchers').insert([{
+      customer_id: null,
+      mikrotik_username: username,
+      package_id: package_id || null,
+      server,
+      status: 'Belum Digunakan',
+      payment_status: 'Lunas',
+      comment: commentStr,
+      expiry_date: null
+    }])
+    
+    if (vErr) {
+      console.error("Gagal insert voucher masal:", vErr)
+      throw new Error("Gagal membuat voucher di database: " + vErr.message)
+    }
+
+    generatedVouchers.push(username)
+  }
+
+  revalidatePath('/dashboard/vouchers')
+  revalidatePath('/dashboard/log-voucher')
+  
+  return generatedVouchers
+}

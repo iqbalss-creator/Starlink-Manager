@@ -26,6 +26,7 @@ import {
   TrendingUp,
   Package,
   Store,
+  Ticket,
 } from "lucide-react"
 
 export type NavSubItem = {
@@ -58,6 +59,7 @@ export const sidebarNavigation: NavItem[] = [
       { title: "Daftar Customer", href: "/dashboard/customers", icon: Users },
       { title: "Agen Voucher", href: "/dashboard/agents", icon: Store },
       { title: "Paket Customer", href: "/dashboard/packages", icon: Package },
+      { title: "Cetak Masal", href: "/dashboard/vouchers/mass", icon: Ticket },
     ],
   },
   {

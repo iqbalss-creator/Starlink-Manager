@@ -13,7 +13,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, Search, Download, Filter, Printer, MessageCircle, RefreshCw, Phone, Ticket, Calendar, Check, X, User } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Plus, Edit, Trash2, Search, Download, Filter, Printer, MessageCircle, RefreshCw, Phone, Ticket, Calendar, Check, X, User, MessageSquare } from 'lucide-react'
 import { UpdateExpiryDialog } from '@/components/dashboard/update-expiry-dialog'
 
 // Utility: export CSV
@@ -237,33 +243,13 @@ export function CustomerList({
     }
   }
 
-  const handleWhatsApp = (cust: Customer) => {
+  const handleWhatsApp = (cust: Customer, contactless: boolean = false) => {
     let wa = cust.whatsapp_number.replace(/\D/g, '')
     if (wa.startsWith('0')) wa = '62' + wa.substring(1)
     
     const vouchers = cust.vouchers && cust.vouchers.length > 0 ? cust.vouchers : []
     
-    const diff = Date.now() - new Date(cust.created_at).getTime()
-    const isNew = diff <= 7 * 24 * 60 * 60 * 1000
-
-    let sapaan = ''
-    if (cust.gender === 'Laki-laki') sapaan = 'Pak '
-    else if (cust.gender === 'Perempuan') sapaan = 'Ibu '
-
-    const panggilaanFull = `${sapaan}${cust.name}`.trim()
-    const panggilaanUmum = cust.gender === 'Laki-laki' ? 'Bapak' : (cust.gender === 'Perempuan' ? 'Ibu' : 'Bapak/Ibu')
-
-    let text = ''
-    if (isNew) {
-      text = `Halo ${panggilaanFull}\nSelamat datang di layanan internet kami!\n\nKami senang ${panggilaanUmum} telah bergabung.`
-      if (vouchers.length > 0) {
-        text += ` Berikut adalah detail voucher yang didaftarkan:\n\n`
-      } else {
-        text += `\n\n`
-      }
-    } else {
-      text = `Halo ${panggilaanFull}\nBerikut adalah detail voucher WiFi terbaru ${panggilaanUmum}:\n\n`
-    }
+    let text = `Halo ${cust.name.trim()}, ini detail voucher WiFi kamu:\n\n`
     
     vouchers.forEach((v: any, index: number) => {
       const pkgName = v.packages ? v.packages.name : 'Paket'
@@ -272,9 +258,13 @@ export function CustomerList({
       text += `Paket: *${pkgName}*\nKode Voucher: *${username}*\n\n`
     })
     
-    text += `Jika sewaktu-waktu ada kendala jaringan atau ada pertanyaan, silakan hubungi nomor ini.\n\nTerima kasih atas kepercayaannya!`
+    text += `Selamat menikmati layanan internet kami!`
     
-    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(text)}`, '_blank')
+    if (contactless) {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+    } else {
+      window.open(`https://wa.me/${wa}?text=${encodeURIComponent(text)}`, '_blank')
+    }
   }
 
   const handlePrint = (cust: Customer) => {
@@ -815,15 +805,24 @@ export function CustomerList({
                                 >
                                   <Printer className="w-4 h-4" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Kirim ke WhatsApp"
-                                  onClick={() => handleWhatsApp(cust)}
-                                  className="text-muted-foreground hover:text-[#00A76F] transition-colors"
-                                >
-                                  <MessageCircle className="w-4 h-4" />
-                                </Button>
+                                <DropdownMenu>
+                                  {/* @ts-ignore */}
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-[#00A76F]">
+                                      <MessageCircle className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleWhatsApp(cust)}>
+                                      <MessageSquare className="mr-2 h-4 w-4" />
+                                      <span>Kirim WA</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleWhatsApp(cust, true)}>
+                                      <MessageSquare className="mr-2 h-4 w-4" />
+                                      <span>Kirim WA (Pilih Kontak)</span>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                                 <Button
                                   variant="ghost"
                                   size="icon"

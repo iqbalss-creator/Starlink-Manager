@@ -40,10 +40,8 @@ export function AgentAuthDialog({ agent }: { agent: any }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <Button size="icon" variant="ghost" className="h-8 w-8 text-indigo-600 hover:bg-indigo-50" title="Ubah Akun (Username/Password)">
-          <KeyRound className="w-4 h-4" />
-        </Button>
+      <DialogTrigger className="h-8 w-8 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-50 text-indigo-600" title="Ubah Akun (Username/Password)">
+        <KeyRound className="w-4 h-4" />
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

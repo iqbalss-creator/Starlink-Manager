@@ -37,7 +37,7 @@ async function tryLogin() {
     'sudo apt install -y nodejs git',
     'sudo npm install -g pm2',
     'rm -rf Starlink-Manager',
-    'git clone https://x-access-token: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@github.com/iqbalss-creator/Starlink-Manager.git',
+    'git clone https://github.com/iqbalss-creator/Starlink-Manager.git',
     'cd Starlink-Manager && npm install',
     `cd Starlink-Manager && cat << 'EOF' > .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://ibapvnccesbcuhmzjcdc.supabase.co

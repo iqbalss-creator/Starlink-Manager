@@ -10,7 +10,7 @@ export async function getAgents() {
   const { data, error } = await supabase
     .from('agents')
     .select(`
-      id, name, whatsapp_number, commission_rate, created_at,
+      id, name, username, whatsapp_number, commission_rate, created_at,
       vouchers (
         id, mikrotik_username, package_id, server, status, settlement_status, settled_at, created_at,
         packages (id, name, price, duration_days)
@@ -28,20 +28,61 @@ export async function getAgents() {
 export async function addAgent(formData: FormData) {
   const supabase = await createClient()
   const name = formData.get('name') as string
+  const username = formData.get('username') as string || `agen_${name.replace(/\s+/g, '').toLowerCase()}`
+  const password = formData.get('password') as string || 'admin'
   const whatsapp_number = formData.get('whatsapp_number') as string
   const commission_rate = parseFloat(formData.get('commission_rate') as string || '20')
 
-  if (!name) return { error: 'Nama agen wajib diisi' }
+  if (!name || !username) return { error: 'Nama dan Username agen wajib diisi' }
+
+  // Cek apakah username sudah ada
+  const { data: existingUser } = await supabase.from('agents').select('id').eq('username', username).single()
+  if (existingUser) return { error: 'Username sudah digunakan oleh agen lain' }
 
   const { error } = await supabase.from('agents').insert([{
     name,
+    username,
+    password,
     whatsapp_number,
-    commission_rate
+    commission_rate,
+    is_first_login: true
   }])
 
   if (error) {
     console.error('Error adding agent:', error)
     return { error: 'Gagal menambahkan agen' }
+  }
+
+  revalidatePath('/dashboard/agents')
+  return { success: true }
+}
+
+export async function updateAgentAuth(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const username = formData.get('username') as string
+  const password = formData.get('password') as string
+  const whatsapp_number = formData.get('whatsapp_number') as string
+  const resetFirstLogin = formData.get('reset_first_login') === 'on'
+
+  if (!username) return { error: 'Username tidak boleh kosong' }
+
+  // Cek apakah username dipakai oleh orang lain
+  const { data: checkUser } = await supabase.from('agents').select('id').eq('username', username).neq('id', id).single()
+  if (checkUser) return { error: 'Username sudah digunakan oleh agen lain' }
+
+  const updateData: any = { username, whatsapp_number }
+  if (password) {
+    updateData.password = password
+  }
+  if (resetFirstLogin) {
+    updateData.is_first_login = true
+  }
+
+  const { error } = await supabase.from('agents').update(updateData).eq('id', id)
+
+  if (error) {
+    console.error('Error updating agent auth:', error)
+    return { error: 'Gagal mengupdate kredensial agen' }
   }
 
   revalidatePath('/dashboard/agents')

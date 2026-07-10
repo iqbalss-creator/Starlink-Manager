@@ -5,45 +5,22 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 export async function loginToAgentPortal(formData: FormData) {
-  const wa = formData.get('whatsapp_number') as string
-  if (!wa) return { error: 'Nomor WhatsApp harus diisi' }
+  const username = formData.get('username') as string
+  const password = formData.get('password') as string
 
-  // Clean the number format (ensure it starts with 0 or 62)
-  let cleanWa = wa.replace(/\D/g, '')
-  if (cleanWa.startsWith('62')) cleanWa = '0' + cleanWa.substring(2)
+  if (!username || !password) return { error: 'Username dan Password harus diisi' }
 
   const supabase = await createClient()
 
-  // First try direct match
   let { data: agent, error } = await supabase
     .from('agents')
-    .select('id, name')
-    .eq('whatsapp_number', cleanWa)
+    .select('id, name, is_first_login')
+    .eq('username', username)
+    .eq('password', password)
     .single()
 
-  // If not found, try with 62 prefix
-  if (!agent) {
-    let altWa = '62' + cleanWa.substring(1)
-    const { data: altAgent } = await supabase
-      .from('agents')
-      .select('id, name')
-      .eq('whatsapp_number', altWa)
-      .single()
-    agent = altAgent
-  }
-
-  // If still not found, try original input
-  if (!agent) {
-    const { data: origAgent } = await supabase
-      .from('agents')
-      .select('id, name')
-      .eq('whatsapp_number', wa)
-      .single()
-    agent = origAgent
-  }
-
-  if (!agent) {
-    return { error: 'Nomor WhatsApp tidak terdaftar sebagai agen.' }
+  if (error || !agent) {
+    return { error: 'Username atau Password salah.' }
   }
 
   // Log the login attempt
@@ -52,7 +29,7 @@ export async function loginToAgentPortal(formData: FormData) {
     entity_type: 'AGENT_LOGIN',
     entity_id: agent.id,
     new_data: { 
-      wa_number: wa,
+      username: username,
       message: `Agen ${agent.name} login ke Portal Agen`
     }
   }])
@@ -60,7 +37,8 @@ export async function loginToAgentPortal(formData: FormData) {
   // Set session
   const cookieStore = await cookies()
   const sessionData = {
-    agentId: agent.id
+    agentId: agent.id,
+    is_first_login: agent.is_first_login
   }
   
   cookieStore.set('agent_session', JSON.stringify(sessionData), {
@@ -70,7 +48,11 @@ export async function loginToAgentPortal(formData: FormData) {
     path: '/'
   })
 
-  redirect('/agent')
+  if (agent.is_first_login) {
+    redirect('/agent/setup-password')
+  } else {
+    redirect('/agent')
+  }
 }
 
 export async function getAgentPortalData() {
@@ -92,6 +74,10 @@ export async function getAgentPortalData() {
 
   if (!agentData) {
     redirect('/agent/login')
+  }
+
+  if (agentData.is_first_login) {
+    redirect('/agent/setup-password')
   }
 
   // Fetch all vouchers for agent

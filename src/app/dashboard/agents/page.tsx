@@ -2,8 +2,9 @@ import { getAgents, addAgent, deleteAgent } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Store, UserPlus, Phone, Trash2, ArrowRight } from "lucide-react"
+import { Store, UserPlus, Phone, Trash2, ArrowRight, User } from "lucide-react"
 import Link from "next/link"
+import { AgentAuthDialog } from "./agent-auth-dialog"
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,14 @@ export default async function AgentsPage() {
               <div className="grid gap-2">
                 <Label htmlFor="name">Nama Agen / Reseller</Label>
                 <Input id="name" name="name" placeholder="Misal: Konter Ali" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="username">Username</Label>
+                <Input id="username" name="username" placeholder="Misal: konter_ali" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="password">Password Default</Label>
+                <Input id="password" name="password" defaultValue="admin" required />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="whatsapp_number">Nomor WhatsApp</Label>
@@ -79,7 +88,8 @@ export default async function AgentsPage() {
 
             return (
               <div key={agent.id} className="bg-card border rounded-2xl p-5 shadow-sm relative group overflow-hidden flex flex-col h-full">
-                <div className="absolute top-0 right-0 p-3 flex gap-1">
+                <div className="absolute top-0 right-0 p-3 flex gap-1 z-10">
+                  <AgentAuthDialog agent={agent} />
                   <form action={async () => {
                     'use server'
                     await deleteAgent(agent.id)
@@ -96,9 +106,15 @@ export default async function AgentsPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-lg leading-tight">{agent.name}</h3>
-                    <div className="flex items-center text-muted-foreground text-xs gap-1 mt-1">
-                      <Phone className="w-3 h-3" />
-                      {agent.whatsapp_number || '-'}
+                    <div className="flex flex-col text-muted-foreground text-xs gap-1 mt-1">
+                      <div className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        <span className="font-medium text-slate-700">{agent.username || '-'}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {agent.whatsapp_number || '-'}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -60,6 +60,7 @@ export const sidebarNavigation: NavItem[] = [
       { title: "Agen Voucher", href: "/dashboard/agents", icon: Store },
       { title: "Paket Customer", href: "/dashboard/packages", icon: Package },
       { title: "Cetak Masal", href: "/dashboard/vouchers/mass", icon: Ticket },
+      { title: "Riwayat Cetak", href: "/dashboard/vouchers/mass/history", icon: ClipboardList },
     ],
   },
   {

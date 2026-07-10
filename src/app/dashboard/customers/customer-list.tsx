@@ -258,8 +258,9 @@ export function CustomerList({
       text += `Paket: *${pkgName}*\nKode Voucher: *${username}*\n\n`
     })
     
-    text += `Selamat menikmati layanan internet kami!`
-    
+    text += `Selamat menikmati layanan internet kami!\n\n`
+    text += `Pantau sisa voucher dan tagihan Anda di:\n`
+    text += `https://${window.location.host}/portal`
     if (contactless) {
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
     } else {

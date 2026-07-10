@@ -824,8 +824,9 @@ export async function updateVoucherPaymentStatus(voucherId: string, newStatus: s
 export async function createMassVouchers(formData: FormData) {
   const qtyStr = formData.get('quantity') as string
   const package_id = formData.get('package_id') as string | null
-  const server = formData.get('server') as string || 'all'
+  const server = formData.get('server') as string || 'allstar'
   const lengthStr = formData.get('length') as string || '5'
+  const prefix = formData.get('prefix') as string || ''
   
   const qty = parseInt(qtyStr) || 1
   const length = parseInt(lengthStr) || 5
@@ -844,18 +845,19 @@ export async function createMassVouchers(formData: FormData) {
 
   const generatedVouchers: string[] = []
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  
+  const today = new Date()
+  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+  const mikhmonDate = `${months[today.getMonth()]}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
+  const timestamp = Date.now()
+  const commentStr = `vc-${mikhmonDate}-mass-${timestamp}`
 
   for (let i = 0; i < qty; i++) {
-    let username = ''
+    let username = prefix
     for (let j = 0; j < length; j++) {
       username += chars.charAt(Math.floor(Math.random() * chars.length))
     }
     const password = username
-
-    const today = new Date()
-    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
-    const mikhmonDate = `${months[today.getMonth()]}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
-    const commentStr = `vc-${mikhmonDate}-mass`
 
     try {
       await mikrotikQuery('/ip/hotspot/user/add', [
@@ -895,4 +897,73 @@ export async function createMassVouchers(formData: FormData) {
   revalidatePath('/dashboard/log-voucher')
   
   return generatedVouchers
+}
+
+export async function getMassVoucherBatches() {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('vouchers')
+    .select('id, mikrotik_username, comment, created_at, packages(name)')
+    .is('customer_id', null)
+    .like('comment', 'vc-%-mass-%')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error("Error fetching mass vouchers:", error)
+    return []
+  }
+
+  // Group by batch (comment)
+  const batches = data.reduce((acc: any, curr: any) => {
+    const batchId = curr.comment
+    if (!acc[batchId]) {
+      const packageObj = Array.isArray(curr.packages) ? curr.packages[0] : curr.packages
+      acc[batchId] = {
+        batchId,
+        createdAt: curr.created_at,
+        packageName: packageObj ? packageObj.name : 'Unknown',
+        vouchers: []
+      }
+    }
+    acc[batchId].vouchers.push({
+      id: curr.id,
+      username: curr.mikrotik_username
+    })
+    return acc
+  }, {})
+
+  return Object.values(batches).sort((a: any, b: any) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+}
+
+export async function deleteMassVoucherBatch(batchId: string, voucherIds?: string[]) {
+  const supabase = await createClient()
+
+  // Find all vouchers in this batch if specific ones aren't provided
+  let query = supabase.from('vouchers').select('id, mikrotik_username').eq('comment', batchId)
+  if (voucherIds && voucherIds.length > 0) {
+    query = query.in('id', voucherIds)
+  }
+
+  const { data: vouchersToDelete } = await query
+
+  if (vouchersToDelete && vouchersToDelete.length > 0) {
+    for (const v of vouchersToDelete) {
+      try {
+        await mikrotikQuery('/ip/hotspot/user/remove', [`=numbers=${v.mikrotik_username}`])
+      } catch (e: any) {
+        if (!e.message.includes('no such item')) {
+          console.error(`Gagal hapus ${v.mikrotik_username} dari MikroTik:`, e)
+        }
+      }
+    }
+
+    const idsToDelete = vouchersToDelete.map(v => v.id)
+    await supabase.from('vouchers').delete().in('id', idsToDelete)
+  }
+
+  revalidatePath('/dashboard/vouchers')
+  revalidatePath('/dashboard/vouchers/mass/history')
 }

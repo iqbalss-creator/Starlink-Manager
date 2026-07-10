@@ -6,7 +6,6 @@ import { createMassVouchers } from '../../customers/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Printer, Ticket } from 'lucide-react'
 
@@ -71,24 +70,30 @@ export function MassClient({ packages }: { packages: any[] }) {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="prefix">Prefix Kode (Opsional)</Label>
+              <Input id="prefix" name="prefix" placeholder="Contoh: VC" />
+            </div>
+
+
+            <div className="space-y-2">
               <Label htmlFor="package_id">Paket Layanan</Label>
-              <Select name="package_id" required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih paket" />
-                </SelectTrigger>
-                <SelectContent>
-                  {packages.map(pkg => (
-                    <SelectItem key={pkg.id} value={pkg.id}>
-                      {pkg.name} - Rp {pkg.price.toLocaleString('id-ID')}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <select
+                name="package_id"
+                required
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+              >
+                <option value="" disabled selected className="text-muted-foreground">Pilih paket</option>
+                {packages.map(pkg => (
+                  <option key={pkg.id} value={pkg.id} className="text-foreground bg-background">
+                    {pkg.name} - Rp {pkg.price.toLocaleString('id-ID')}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="server">Server Hotspot (MikroTik)</Label>
-              <Input id="server" name="server" defaultValue="all" required />
+              <Input id="server" name="server" defaultValue="allstar" required />
             </div>
 
             <div className="pt-4">

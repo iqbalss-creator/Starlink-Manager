@@ -112,7 +112,7 @@ export async function syncMikrotikUsers() {
               needsUpdate = true
             }
           }
-        } else if (mtUser.comment && mtUser.comment.startsWith('vc-') && mtUser.uptime && voucher.status === 'Belum Digunakan') {
+        } else if (mtUser.comment && mtUser.comment.startsWith('vc-') && mtUser.uptime && (voucher.status === 'Belum Digunakan' || !voucher.expiry_date)) {
           // Voucher digunakan tetapi komennya belum berubah dari vc- (karena tidak ada on-login script di MikroTik)
           // Kita akan kalkulasi otomatis berdasarkan uptime
           const uptimeMs = parseMikrotikUptime(mtUser.uptime)

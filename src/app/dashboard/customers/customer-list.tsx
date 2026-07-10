@@ -762,6 +762,10 @@ export function CustomerList({
                                   <div className="text-foreground text-sm font-medium">
                                     {new Date(v.expiry_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   </div>
+                                ) : v.status === 'Nonaktif' ? (
+                                  <span className="inline-flex items-center gap-1.5 bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                                    Terhapus / Expired
+                                  </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border border-yellow-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">
                                     Belum Digunakan

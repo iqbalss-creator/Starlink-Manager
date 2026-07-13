@@ -255,13 +255,31 @@ export function CustomerList({
     
     let text = `Halo ${cust.name.trim()}, ini detail voucher WiFi kamu:\n\n`
     
+    let totalHarga = 0;
+    let totalTagihan = 0;
+    
     vouchers.forEach((v: any, index: number) => {
       const pkgName = v.packages ? v.packages.name : 'Paket'
       const username = v.mikrotik_username || '-'
+      const harga = v.packages?.price || 0
+      
+      totalHarga += harga
+      if (v.payment_status === 'Belum Lunas') {
+        totalTagihan += harga
+      }
+
       if (vouchers.length > 1) text += `--- Voucher ${index + 1} ---\n`
-      text += `Paket: *${pkgName}*\nKode Voucher: *${username}*\n\n`
+      text += `Paket: *${pkgName}*\nKode Voucher: *${username}*\nHarga: *Rp ${harga.toLocaleString('id-ID')}*\n\n`
     })
     
+    text += `*Total Pembelian: Rp ${totalHarga.toLocaleString('id-ID')}*\n`
+    
+    if (totalTagihan > 0) {
+      text += `*Total Tagihan (Belum Lunas): Rp ${totalTagihan.toLocaleString('id-ID')}*\n\n`
+    } else {
+      text += `\n`
+    }
+
     text += `Selamat menikmati layanan internet kami!\n\n`
     text += `Pantau sisa voucher dan tagihan Anda di:\n`
     text += `https://${window.location.host}/portal`

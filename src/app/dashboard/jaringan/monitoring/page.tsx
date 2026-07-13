@@ -1,6 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { CheckCircle, XCircle, AlertCircle, Database, Globe, Wifi, Activity, Router } from 'lucide-react'
-import { mikrotikQuery } from '@/app/api/mikrotik/route'
+import { mikrotikQuery } from '@/lib/mikrotik'
 
 async function checkSupabase() {
   try {

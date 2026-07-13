@@ -21,7 +21,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
   const { data: unsettledVouchers } = await supabase
     .from('vouchers')
     .select(`
-      id, mikrotik_username, package_id, server, status, settlement_status, settled_at, created_at,
+      id, mikrotik_username, package_id, server, status, settlement_status, settled_at, created_at, comment,
       packages (id, name, price, duration_days)
     `)
     .eq('agent_id', id)
@@ -45,7 +45,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
   const { data: allVouchers } = await supabase
     .from('vouchers')
     .select(`
-      id, mikrotik_username, status, created_at, package_id,
+      id, mikrotik_username, status, created_at, package_id, comment,
       packages (id, name, price, duration_days)
     `)
     .eq('agent_id', id)

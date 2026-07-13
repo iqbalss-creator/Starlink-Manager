@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
-import { mikrotikQuery } from '@/app/api/mikrotik/route'
+import { mikrotikQuery } from '@/lib/mikrotik'
 
 export async function getVoucherLogs() {
   const supabase = await createClient()

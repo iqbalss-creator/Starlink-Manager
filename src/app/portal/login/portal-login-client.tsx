@@ -22,7 +22,6 @@ export function PortalLoginClient() {
       if (res?.error) setError(res.error)
     } catch (e: any) {
       setError(e.message || 'Terjadi kesalahan')
-    } finally {
       setIsPending(false)
     }
   }

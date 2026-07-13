@@ -3,6 +3,7 @@ import { Public_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "sonner";
 
 const publicSans = Public_Sans({
   variable: "--font-sans",
@@ -34,6 +35,7 @@ export default function RootLayout({
         >
           <TooltipProvider>
             {children}
+            <Toaster richColors position="top-center" />
           </TooltipProvider>
         </ThemeProvider>
       </body>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "./actions";
 import {
@@ -18,6 +18,7 @@ import { Loader2, Lock, User, AlertCircle, Satellite } from "lucide-react";
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [appName, setAppName] = useState("Allstar Manager");
   const [appLogo, setAppLogo] = useState("");
@@ -35,27 +36,42 @@ export default function LoginPage() {
 
   const router = useRouter();
 
-  async function handleSubmit(formData: FormData) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setIsLoading(true);
     setError("");
     try {
       const res = await login(formData);
       if (res?.error) {
         setError(res.error);
+        setIsLoading(false);
       } else {
-        router.push("/dashboard");
-        router.refresh();
+        startTransition(() => {
+          router.push("/dashboard");
+          router.refresh();
+        });
       }
     } catch (e: any) {
       console.error("Login catch error:", e);
       setError("Error: " + (e.message || String(e)));
-    } finally {
       setIsLoading(false);
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+      {/* Full Page Loader Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/50 dark:bg-black/50 backdrop-blur-sm">
+          <div className="flex flex-col items-center p-6 bg-white dark:bg-slate-900 rounded-2xl shadow-xl">
+            <Loader2 className="w-10 h-10 animate-spin text-[#00A76F] mb-4" />
+            <p className="font-medium text-slate-900 dark:text-white">Sedang masuk...</p>
+            <p className="text-sm text-slate-500 mt-1">Mohon tunggu sebentar</p>
+          </div>
+        </div>
+      )}
+
       {/* Background Ornaments */}
       {appLogo && (
         <div 
@@ -94,7 +110,7 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={handleSubmit} className="space-y-4">
+          <form onSubmit={onSubmit} className="space-y-4">
             {error && (
               <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-lg flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -113,6 +129,7 @@ export default function LoginPage() {
                   placeholder="admin"
                   required
                   className="pl-9"
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -128,6 +145,7 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   required
                   className="pl-9"
+                  disabled={isLoading}
                 />
               </div>
             </div>

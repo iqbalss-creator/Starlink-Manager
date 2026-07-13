@@ -2,7 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { mikrotikQuery } from '@/app/api/mikrotik/route'
+import { mikrotikQuery } from '@/lib/mikrotik'
 
 export async function getAgents() {
   const supabase = await createClient()
@@ -35,7 +35,6 @@ export async function addAgent(formData: FormData) {
 
   if (!name || !username) return { error: 'Nama dan Username agen wajib diisi' }
 
-  // Cek apakah username sudah ada
   const { data: existingUser } = await supabase.from('agents').select('id').eq('username', username).single()
   if (existingUser) return { error: 'Username sudah digunakan oleh agen lain' }
 
@@ -66,7 +65,6 @@ export async function updateAgentAuth(id: string, formData: FormData) {
 
   if (!username) return { error: 'Username tidak boleh kosong' }
 
-  // Cek apakah username dipakai oleh orang lain
   const { data: checkUser } = await supabase.from('agents').select('id').eq('username', username).neq('id', id).single()
   if (checkUser) return { error: 'Username sudah digunakan oleh agen lain' }
 
@@ -92,8 +90,6 @@ export async function updateAgentAuth(id: string, formData: FormData) {
 export async function deleteAgent(id: string) {
   const supabase = await createClient()
   
-  // Vouchers connected to this agent will have their agent_id set to NULL due to ON DELETE CASCADE or SET NULL
-  // Since we set ON DELETE CASCADE in our migration, all vouchers for this agent will be deleted.
   const { error } = await supabase.from('agents').delete().eq('id', id)
   
   if (error) {
@@ -114,10 +110,9 @@ function generateRandomString(length: number, type: 'numeric' | 'alphanumeric' =
   return result
 }
 
-export async function generateAgentVouchers(agentId: string, packageId: string, server: string, quantity: number, prefix: string, randomType: 'numeric' | 'alphanumeric' = 'alphanumeric') {
+export async function generateAgentVouchers(agentId: string, packageId: string, server: string, quantity: number, prefix: string, randomType: 'numeric' | 'alphanumeric' = 'alphanumeric', existingComment?: string) {
   const supabase = await createClient()
   
-  // Get package details
   const { data: pkg } = await supabase.from('packages').select('*').eq('id', packageId).single()
   if (!pkg) return { error: 'Paket tidak ditemukan' }
   
@@ -126,56 +121,78 @@ export async function generateAgentVouchers(agentId: string, packageId: string, 
   const today = new Date()
   const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
   const mikhmonDate = `${months[today.getMonth()]}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
-  const commentStr = `vc-${mikhmonDate}-${agentName.replace(/\s+/g, '').toLowerCase().substring(0,5)}`
-  const createdVouchers = []
+  const batchId = generateRandomString(6, 'alphanumeric').toUpperCase()
+  const commentStr = existingComment || `vc-${batchId}-${mikhmonDate}-${agentName.replace(/\s+/g, '').toLowerCase().substring(0,5)}`
+  const createdVouchersToInsert: any[] = []
   let lastError = null
   
-  for (let i = 0; i < quantity; i++) {
-    const randomStr = generateRandomString(5, randomType)
-    const username = `${prefix || 'vc'}${randomStr}`
+  const chunkSize = 10;
+  for (let i = 0; i < quantity; i += chunkSize) {
+    const currentChunkSize = Math.min(chunkSize, quantity - i)
+    const promises = Array.from({ length: currentChunkSize }).map(async () => {
+      let username = '';
+      let success = false;
+      let attempt = 0;
+      
+      while (!success && attempt < 3) {
+        attempt++;
+        const randomStr = generateRandomString(5, randomType)
+        username = `${prefix || 'vc'}${randomStr}`
+        
+        try {
+          const mikrotikParams = [
+            `=name=${username}`,
+            `=password=${username}`,
+            `=profile=${pkg.name}`,
+            `=comment=${commentStr}`
+          ]
+          if (server !== 'all') {
+            mikrotikParams.push(`=server=${server}`)
+          }
+          await mikrotikQuery('/ip/hotspot/user/add', mikrotikParams)
+          success = true;
+        } catch (err: any) {
+          console.error(`Gagal membuat voucher ${username} di MikroTik:`, err)
+          lastError = err.message || 'Unknown error from Mikrotik API'
+        }
+      }
+      
+      if (success) {
+        return {
+          customer_id: null,
+          agent_id: agentId,
+          mikrotik_username: username,
+          package_id: packageId,
+          server: server,
+          status: 'Belum Digunakan',
+          settlement_status: 'Belum Setor',
+          comment: commentStr
+        }
+      }
+      return null;
+    })
     
-    // Create in Mikrotik
-    try {
-      const mikrotikParams = [
-        `=name=${username}`,
-        `=password=${username}`,
-        `=profile=${pkg.name}`,
-        `=comment=${commentStr}`
-      ]
-      if (server !== 'all') {
-        mikrotikParams.push(`=server=${server}`)
-      }
-      
-      await mikrotikQuery('/ip/hotspot/user/add', mikrotikParams)
-      
-      // Save to Supabase
-      const { data: newVoucher, error: dbError } = await supabase.from('vouchers').insert([{
-        customer_id: null,
-        agent_id: agentId,
-        mikrotik_username: username,
-        package_id: packageId,
-        server: server,
-        status: 'Belum Digunakan',
-        settlement_status: 'Belum Setor',
-        comment: commentStr
-      }]).select().single()
-      
-      if (!dbError && newVoucher) {
-        createdVouchers.push(newVoucher)
-      }
-    } catch (err: any) {
-      console.error(`Gagal membuat voucher ${username} di MikroTik:`, err)
-      lastError = err.message || 'Unknown error from Mikrotik API'
+    const results = await Promise.all(promises);
+    for (const res of results) {
+      if (res) createdVouchersToInsert.push(res);
+    }
+  }
+
+  if (createdVouchersToInsert.length > 0) {
+    const { error: dbError } = await supabase.from('vouchers').insert(createdVouchersToInsert)
+    if (dbError) {
+      console.error("Bulk Insert Supabase Error:", dbError)
+      return { error: `Berhasil di MikroTik, tapi gagal di Database: ${dbError.message}` }
     }
   }
   
   revalidatePath(`/dashboard/agents/${agentId}`)
   revalidatePath('/dashboard/agents')
   
-  if (createdVouchers.length === 0 && lastError) {
+  if (createdVouchersToInsert.length === 0 && lastError) {
     return { error: `Gagal ke MikroTik: ${lastError}` }
   }
-  return { success: true, count: createdVouchers.length }
+  return { success: true, count: createdVouchersToInsert.length }
 }
 
 export async function getAgentSettlements(agentId: string) {
@@ -192,23 +209,46 @@ export async function getAgentSettlements(agentId: string) {
   }
   return data
 }
-export async function deleteVoucherCloter(agentId: string, vouchers: {id: string, username: string}[]) {
+
+export async function deleteVoucherCloter(agentId: string, vouchers: {id: string, username: string}[], commentStr?: string) {
   const supabase = await createClient()
   let errorCount = 0
 
-  for (const v of vouchers) {
+  if (commentStr) {
     try {
-      const mtUsers = await mikrotikQuery('/ip/hotspot/user/print', [`?name=${v.username}`]) as any[]
-      if (mtUsers && mtUsers.length > 0) {
-        await mikrotikQuery('/ip/hotspot/user/remove', [`=numbers=${mtUsers[0]['.id']}`])
+      const mtUsers = await mikrotikQuery('/ip/hotspot/user/print', [`?comment=${commentStr}`]) as any[]
+      const chunkSize = 10;
+      for (let i = 0; i < mtUsers.length; i += chunkSize) {
+        const promises = mtUsers.slice(i, i + chunkSize).map(mt => 
+          mikrotikQuery('/ip/hotspot/user/remove', [`=numbers=${mt['.id']}`])
+            .catch(err => {
+              console.error(`Gagal hapus dari MikroTik:`, err)
+              errorCount++
+            })
+        );
+        await Promise.all(promises);
       }
     } catch (err) {
-      console.error(`Gagal hapus ${v.username} dari MikroTik:`, err)
-      errorCount++
+      console.error(`Gagal print users by comment dari MikroTik:`, err)
+    }
+  } else {
+    const chunkSize = 10;
+    for (let i = 0; i < vouchers.length; i += chunkSize) {
+      const promises = vouchers.slice(i, i + chunkSize).map(async v => {
+        try {
+          const mtUsers = await mikrotikQuery('/ip/hotspot/user/print', [`?name=${v.username}`]) as any[]
+          if (mtUsers && mtUsers.length > 0) {
+            await mikrotikQuery('/ip/hotspot/user/remove', [`=numbers=${mtUsers[0]['.id']}`])
+          }
+        } catch (err) {
+          console.error(`Gagal hapus ${v.username} dari MikroTik:`, err)
+          errorCount++
+        }
+      });
+      await Promise.all(promises);
     }
   }
 
-  // 2. Delete from Supabase
   const voucherIds = vouchers.map(v => v.id)
   const { error: dbError } = await supabase
     .from('vouchers')
@@ -228,6 +268,7 @@ export async function deleteVoucherCloter(agentId: string, vouchers: {id: string
   
   return { success: true }
 }
+
 export async function settleAgentVouchers(agentId: string, voucherIds: string[], totalSales: number, commissionRate: number) {
   if (voucherIds.length === 0) return { error: 'Tidak ada voucher untuk disetor' }
   
@@ -237,7 +278,6 @@ export async function settleAgentVouchers(agentId: string, voucherIds: string[],
   const netAmount = totalSales - commissionAmount
   const now = new Date().toISOString()
   
-  // 1. Create settlement record
   const { data: settlement, error: settlementError } = await supabase.from('agent_settlements').insert([{
     agent_id: agentId,
     total_sales_amount: totalSales,
@@ -252,7 +292,6 @@ export async function settleAgentVouchers(agentId: string, voucherIds: string[],
     return { error: 'Gagal mencatat setoran' }
   }
   
-  // 2. Update vouchers status
   const { error: updateError } = await supabase
     .from('vouchers')
     .update({ 
@@ -263,12 +302,91 @@ export async function settleAgentVouchers(agentId: string, voucherIds: string[],
     
   if (updateError) {
     console.error('Error updating vouchers:', updateError)
-    // Rollback settlement
     await supabase.from('agent_settlements').delete().eq('id', settlement.id)
     return { error: 'Gagal memperbarui status voucher' }
   }
   
   revalidatePath(`/dashboard/agents/${agentId}`)
   revalidatePath('/dashboard/agents')
+  return { success: true }
+}
+
+export async function syncCloterVouchers(agentId: string, vouchers: any[], commentStr: string) {
+  const supabase = await createClient()
+  
+  const { data: dbVouchers } = await supabase.from('vouchers')
+    .select('*')
+    .eq('agent_id', agentId)
+    .eq('comment', commentStr)
+    
+  if (!dbVouchers || dbVouchers.length === 0) return { error: 'Cloter tidak ditemukan' }
+  
+  let mikrotikUsers: any[] = []
+  try {
+    mikrotikUsers = await mikrotikQuery('/ip/hotspot/user/print', [`?comment=${commentStr}`])
+  } catch (err: any) {
+    return { error: 'Gagal menghubungi Mikrotik: ' + err.message }
+  }
+  
+  const mikrotikUserMap = new Map(mikrotikUsers.map(u => [u.name, u]))
+  let deletedCount = 0
+  let usedCount = 0
+    for (const v of dbVouchers) {
+      const mtUser = mikrotikUserMap.get(v.mikrotik_username)
+
+      if (!mtUser) {
+        // Ticket is missing from Mikrotik. The user wants it marked as "Terpakai" (Digunakan) instead of deleted.
+        if (v.status !== 'Digunakan') {
+          await supabase.from('vouchers').update({ status: 'Digunakan' }).eq('id', v.id)
+          usedCount++
+        }
+      } else {
+        // Tiket ada di Mikrotik, cek apakah sudah terpakai (uptime > 0s)
+        if (mtUser.uptime && mtUser.uptime !== '0s') {
+          if (v.status !== 'Digunakan') {
+            await supabase.from('vouchers').update({ status: 'Digunakan' }).eq('id', v.id)
+            usedCount++
+          }
+        } else {
+          // Tiket masih utuh dan belum terpakai
+          if (v.status !== 'Belum Digunakan') {
+            await supabase.from('vouchers').update({ status: 'Belum Digunakan' }).eq('id', v.id)
+          }
+        }
+      }
+    }
+  
+  revalidatePath(`/dashboard/agents/${agentId}`)
+  return { success: true, count: deletedCount, usedCount: usedCount }
+}
+
+export async function settlePartialVouchers(agentId: string, voucherIds: string[], totalSales: number, commissionRate: number) {
+  if (voucherIds.length === 0) return { error: 'Tidak ada voucher untuk disetor' }
+  
+  const supabase = await createClient()
+  
+  const commissionAmount = totalSales * (commissionRate / 100)
+  const netAmount = totalSales - commissionAmount
+  const now = new Date().toISOString()
+  
+  const { data: settlement, error: settleError } = await supabase.from('agent_settlements').insert({
+    agent_id: agentId,
+    total_sales_amount: totalSales,
+    commission_amount: commissionAmount,
+    net_amount: netAmount,
+    total_vouchers: voucherIds.length,
+    note: `Setoran sebagian (${voucherIds.length} voucher)`
+  }).select().single()
+  
+  if (settleError) return { error: settleError.message }
+  
+  const { error: updateError } = await supabase.from('vouchers').update({
+    settlement_status: 'Sudah Setor',
+    settlement_id: settlement.id
+  }).in('id', voucherIds)
+  
+  if (updateError) return { error: updateError.message }
+  
+  revalidatePath(`/dashboard/agents/${agentId}`)
   return { success: true }
 }

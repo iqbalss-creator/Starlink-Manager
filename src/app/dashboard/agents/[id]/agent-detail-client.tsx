@@ -1,11 +1,11 @@
 'use client'
 
 import React, { useState } from 'react'
-import { generateAgentVouchers, settleAgentVouchers, deleteVoucherCloter } from '../actions'
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Store, Phone, CheckCircle, Printer, MessageCircle, ArrowLeft, Ticket, Trash2, Eye, X } from "lucide-react"
+import { Store, Phone, CheckCircle, Printer, MessageCircle, ArrowLeft, Ticket, Trash2, Eye, X, RefreshCw } from "lucide-react"
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -16,31 +16,54 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 
+import { generateAgentVouchers, getAgentSettlements, deleteVoucherCloter, settleAgentVouchers, syncCloterVouchers, settlePartialVouchers } from '../actions'
+import { toast } from 'sonner'
+
 export default function AgentDetailClient({ agent, unsettledVouchers, settlements, packages, allVouchers }: any) {
   const router = useRouter()
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSettling, setIsSettling] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeletingCloter, setIsDeletingCloter] = useState<string | null>(null)
+  const [isSyncingCloter, setIsSyncingCloter] = useState<string | null>(null)
   const [selectedCloterDetails, setSelectedCloterDetails] = useState<{cloter: string, paket: string, vouchers: any[]} | null>(null)
+  const [partialSettleBatch, setPartialSettleBatch] = useState<any | null>(null)
+  const [isPartialSettling, setIsPartialSettling] = useState(false)
+  const [appendBatch, setAppendBatch] = useState<any | null>(null)
+  const [isAppending, setIsAppending] = useState(false)
+  const [hasAutoSynced, setHasAutoSynced] = useState(false)
 
   // Calculate totals for Cloter Depan
   const totalSales = unsettledVouchers.reduce((sum: number, v: any) => sum + (v.packages ? v.packages.price : 0), 0)
   const commission = (totalSales * agent.commission_rate) / 100
   const netIncome = totalSales - commission
 
+  const getBatchId = (v: any) => {
+    if (v.comment && v.comment.startsWith('vc-')) {
+      const parts = v.comment.split('-')
+      if (parts.length >= 2) return `Batch ${parts[1]}`
+    }
+    return new Date(v.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+  }
+
   const unsettledMap = new Map()
   unsettledVouchers.forEach((v: any) => {
-    const dateStr = new Date(v.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+    const cloterId = getBatchId(v)
     const pkgName = v.packages?.name || 'Unknown'
-    const key = `${dateStr}-${pkgName}`
+    const key = `${cloterId}-${pkgName}`
     
     if (!unsettledMap.has(key)) {
-      unsettledMap.set(key, { cloter: dateStr, paket: pkgName, rawDate: v.created_at, count: 0, omzet: 0 })
+      unsettledMap.set(key, { cloter: cloterId, paket: pkgName, rawDate: v.created_at, count: 0, omzet: 0, terpakai: 0, belum: 0, vouchers: [] })
     }
     const item = unsettledMap.get(key)
     item.count += 1
     item.omzet += (v.packages?.price || 0)
+    item.vouchers.push(v)
+    if (v.status !== 'Belum Digunakan') {
+      item.terpakai += 1
+    } else {
+      item.belum += 1
+    }
   })
   const unsettledGrouped = Array.from(unsettledMap.values()).sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime())
 
@@ -48,13 +71,13 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
   const stockMap = new Map()
   if (allVouchers) {
     allVouchers.forEach((v: any) => {
-      // Format to minute level for batching
-      const dateStr = new Date(v.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+      // Group by ID to prevent minute differences from splitting cloters
+      const cloterId = getBatchId(v)
       const pkgName = v.packages?.name || 'Unknown'
-      const key = `${dateStr}-${pkgName}`
+      const key = `${cloterId}-${pkgName}`
       
       if (!stockMap.has(key)) {
-        stockMap.set(key, { cloter: dateStr, rawDate: v.created_at, paket: pkgName, total: 0, sisa: 0, vouchers: [] })
+        stockMap.set(key, { cloter: cloterId, rawDate: v.created_at, paket: pkgName, total: 0, sisa: 0, vouchers: [], rawComment: v.comment })
       }
       
       const item = stockMap.get(key)
@@ -69,20 +92,136 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
   // Sort stock data by date descending
   const stockData = Array.from(stockMap.values()).sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime())
 
-  async function handleDeleteCloter(cloterKey: string, vouchers: {id: string, username: string}[]) {
-    if (!confirm(`Yakin mau hapus ${vouchers.length} voucher di cloter ini? Data di database dan MikroTik akan dihapus permanen.`)) return
+  React.useEffect(() => {
+    if (hasAutoSynced) return
+    let isMounted = true
+
+    const doAutoSync = async () => {
+      let changed = false
+      // Hanya auto-sync cloter yang masih ada sisa (belum laku)
+      const activeStock = stockData.filter(s => s.sisa > 0)
+      for (const s of activeStock) {
+        if (!isMounted) break
+        try {
+          const res = await syncCloterVouchers(agent.id, s.vouchers, s.rawComment)
+          if (res && !res.error && ((res.count || 0) > 0 || (res.usedCount || 0) > 0)) {
+            changed = true
+          }
+        } catch (e) {
+          // ignore error on auto-sync
+        }
+      }
+      if (isMounted && changed) {
+        router.refresh()
+      }
+    }
+
+    if (stockData.length > 0) {
+      setHasAutoSynced(true)
+      doAutoSync()
+    }
+  }, [hasAutoSynced, stockData, agent.id, router])
+
+  async function handleDeleteCloter(cloterKey: string, cloterData: any) {
+    if (!confirm(`Yakin mau hapus ${cloterData.vouchers.length} voucher di cloter ini? Data di database dan MikroTik akan dihapus permanen.`)) return
     
     setIsDeletingCloter(cloterKey)
-    const res = await deleteVoucherCloter(agent.id, vouchers)
-    setIsDeletingCloter(null)
+    try {
+      const res = await deleteVoucherCloter(agent.id, cloterData.vouchers, cloterData.rawComment)
+      if (res?.error) {
+        toast.error(res.error)
+      } else if (res?.message) {
+        toast.warning(res.message)
+        router.refresh()
+      } else {
+        toast.success("Berhasil menghapus cloter.")
+        router.refresh()
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Gagal menghapus.")
+    } finally {
+      setIsDeletingCloter(null)
+    }
+  }
+
+  async function handleSyncCloter(cloterKey: string, cloterData: any) {
+    setIsSyncingCloter(cloterKey)
+    try {
+      const res = await syncCloterVouchers(agent.id, cloterData.vouchers, cloterData.rawComment)
+      if (res?.error) {
+        toast.error(res.error)
+      } else {
+        toast.success(`Berhasil sinkronisasi. ${res.count || 0} dihapus, ${res.usedCount || 0} terpakai.`)
+        router.refresh()
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Gagal sinkronisasi.")
+    } finally {
+      setIsSyncingCloter(null)
+    }
+  }
+
+  async function handlePartialSettle(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!partialSettleBatch) return
     
+    const formData = new FormData(e.currentTarget)
+    const quantity = parseInt(formData.get('quantity') as string)
+    
+    if (quantity > partialSettleBatch.count) {
+      toast.error(`Jumlah tidak bisa lebih dari ${partialSettleBatch.count}`)
+      return
+    }
+
+    setIsPartialSettling(true)
+    
+    // Sort vouchers: Terpakai first, then Belum Digunakan
+    const sortedVouchers = [...partialSettleBatch.vouchers].sort((a, b) => {
+      if (a.status !== 'Belum Digunakan' && b.status === 'Belum Digunakan') return -1;
+      if (a.status === 'Belum Digunakan' && b.status !== 'Belum Digunakan') return 1;
+      return 0;
+    });
+
+    const selectedVouchers = sortedVouchers.slice(0, quantity)
+    const selectedIds = selectedVouchers.map((v: any) => v.id)
+    const totalSalesAmount = selectedVouchers.reduce((sum: number, v: any) => sum + (v.packages?.price || 0), 0)
+
+    const res = await settlePartialVouchers(agent.id, selectedIds, totalSalesAmount, agent.commission_rate)
+    
+    setIsPartialSettling(false)
     if (res?.error) {
-      alert(res.error)
-    } else if (res?.message) {
-      alert(res.message)
-      router.refresh()
+      toast.error(res.error)
     } else {
+      toast.success(`Berhasil menyetorkan ${quantity} voucher.`)
+      setPartialSettleBatch(null)
       router.refresh()
+    }
+  }
+
+  async function handleAppend(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!appendBatch) return
+
+    setIsAppending(true)
+    const formData = new FormData(e.currentTarget)
+    const qty = parseInt(formData.get('quantity') as string)
+    
+    try {
+      const serverStr = appendBatch.vouchers[0]?.server || 'all'
+      const prefixStr = agent.username
+      const commentStr = appendBatch.vouchers[0]?.comment
+      const res = await generateAgentVouchers(agent.id, appendBatch.vouchers[0].package_id, serverStr, qty, prefixStr, 'alphanumeric', commentStr)
+      if (res?.error) {
+        toast.error(res.error)
+      } else {
+        toast.success(`Berhasil menambahkan ${qty} voucher ke cloter.`)
+        setAppendBatch(null)
+        router.refresh()
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Gagal menambah voucher.")
+    } finally {
+      setIsAppending(false)
     }
   }
 
@@ -96,13 +235,20 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
     const server = formData.get('server') as string
     const randomType = formData.get('randomType') as 'numeric' | 'alphanumeric'
     
-    const res = await generateAgentVouchers(agent.id, pkgId, server, qty, prefix, randomType)
-    setIsGenerating(false)
-    if (res?.error) {
-      alert(res.error)
-    } else {
-      setIsDialogOpen(false) // Auto close modal after generation
-      router.refresh()
+    try {
+      const res = await generateAgentVouchers(agent.id, pkgId, server, qty, prefix, randomType)
+      if (res?.error) {
+        toast.error(res.error)
+      } else {
+        toast.success(`Berhasil membuat ${qty} voucher.`)
+        setIsDialogOpen(false) // Auto close modal after generation
+        router.refresh()
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Terjadi kesalahan tidak terduga saat membuat voucher.')
+    } finally {
+      setIsGenerating(false)
     }
   }
 
@@ -317,6 +463,15 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="text-orange-500 hover:text-orange-600 hover:bg-orange-50"
+                          onClick={() => setAppendBatch(s)}
+                          title="Tambah Voucher ke Cloter Ini"
+                        >
+                          <Ticket className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50"
                           onClick={() => setSelectedCloterDetails({cloter: s.cloter, paket: s.paket, vouchers: s.vouchers})}
                           title="Lihat Detail Voucher"
@@ -335,8 +490,18 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
+                          onClick={() => handleSyncCloter(key, s)}
+                          disabled={isSyncingCloter === key}
+                          title="Sinkronisasi Cloter"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${isSyncingCloter === key ? 'animate-spin' : ''}`} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                          onClick={() => handleDeleteCloter(key, s.vouchers)}
+                          onClick={() => handleDeleteCloter(key, s)}
                           disabled={isDeletingCloter === key}
                           title="Hapus Cloter"
                         >
@@ -460,22 +625,34 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
               <tr>
                 <th className="px-5 py-3 font-semibold">Cloter (Waktu Generate)</th>
                 <th className="px-5 py-3 font-semibold">Paket</th>
-                <th className="px-5 py-3 font-semibold text-center">Terjual (Belum Setor)</th>
+                <th className="px-5 py-3 font-semibold text-center">Status Tiket</th>
                 <th className="px-5 py-3 font-semibold text-right">Omzet</th>
+                <th className="px-5 py-3 font-semibold text-right">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {unsettledGrouped.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-muted-foreground">Belum ada voucher di cloter ini.</td>
+                  <td colSpan={5} className="px-5 py-8 text-center text-muted-foreground">Belum ada voucher di cloter ini.</td>
                 </tr>
               ) : (
                 unsettledGrouped.map((s: any, idx: number) => (
                   <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
                     <td className="px-5 py-3 font-medium">{s.cloter}</td>
                     <td className="px-5 py-3">{s.paket}</td>
-                    <td className="px-5 py-3 text-center font-bold text-blue-600">{s.count} tiket</td>
+                    <td className="px-5 py-3 text-center text-sm">
+                      <div className="flex gap-2 justify-center items-center">
+                        <span className="font-bold text-blue-600" title="Total Tiket">{s.count} total</span>
+                        <span className="text-muted-foreground">|</span>
+                        <span className="text-green-600 font-bold" title="Tiket Laku/Terpakai">{s.terpakai} laku</span>
+                      </div>
+                    </td>
                     <td className="px-5 py-3 text-right font-bold text-[#00A76F]">Rp {s.omzet.toLocaleString('id-ID')}</td>
+                    <td className="px-5 py-3 text-right">
+                      <Button size="sm" variant="outline" onClick={() => setPartialSettleBatch(s)}>
+                        Bayar Sebagian
+                      </Button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -572,6 +749,67 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
               </tbody>
             </table>
           </div>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={!!partialSettleBatch} onOpenChange={(open) => !open && setPartialSettleBatch(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Setor Sebagian: {partialSettleBatch?.cloter}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handlePartialSettle} className="space-y-4 pt-4">
+            <div className="grid gap-2">
+              <Label>Paket (Harga: Rp {partialSettleBatch?.vouchers[0]?.packages?.price?.toLocaleString('id-ID')})</Label>
+              <Input value={partialSettleBatch?.paket || ''} disabled />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Total Tiket Tersedia</Label>
+                <Input value={partialSettleBatch?.count || 0} disabled />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-green-600">Sudah Laku (Terpakai)</Label>
+                <Input value={partialSettleBatch?.terpakai || 0} disabled className="border-green-200 text-green-700 bg-green-50" />
+              </div>
+            </div>
+            <div className="grid gap-2 mt-2">
+              <Label htmlFor="quantity">Jumlah Tiket yang Ingin Disetor / Dibayar</Label>
+              <Input 
+                id="quantity" 
+                name="quantity" 
+                type="number" 
+                min="1" 
+                max={partialSettleBatch?.count || 1} 
+                defaultValue={partialSettleBatch?.terpakai > 0 ? partialSettleBatch?.terpakai : 1} 
+                required 
+              />
+              <span className="text-xs text-muted-foreground">Sistem akan memprioritaskan tiket yang sudah terpakai untuk disetor.</span>
+            </div>
+            <Button type="submit" disabled={isPartialSettling} className="w-full bg-blue-600 hover:bg-blue-700 text-white mt-4">
+              {isPartialSettling ? 'Memproses Setoran...' : 'Setor Sekarang'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!appendBatch} onOpenChange={(open) => !open && setAppendBatch(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah Voucher ke Cloter: {appendBatch?.cloter}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAppend} className="space-y-4 pt-4">
+            <div className="grid gap-2">
+              <Label>Paket yang Ditambahkan</Label>
+              <Input value={appendBatch?.paket || ''} disabled />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="quantity">Jumlah Voucher Tambahan</Label>
+              <Input id="quantity" name="quantity" type="number" min="1" max="50" defaultValue="1" required />
+            </div>
+            <Button type="submit" disabled={isAppending} className="w-full bg-orange-600 hover:bg-orange-700 text-white mt-4">
+              {isAppending ? 'Menambahkan...' : 'Generate & Tambah ke Cloter'}
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

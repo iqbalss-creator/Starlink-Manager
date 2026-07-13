@@ -24,6 +24,7 @@ async function deploy() {
       'echo "Korindo582" | sudo -S rm -rf Starlink-Manager',
       'mkdir Starlink-Manager',
       'tar -xzf deploy.tar.gz -C Starlink-Manager',
+      'cd Starlink-Manager && rm -rf node_modules .next',
       'cd Starlink-Manager && npm install',
       `cd Starlink-Manager && cat << 'EOF' > .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://ibapvnccesbcuhmzjcdc.supabase.co

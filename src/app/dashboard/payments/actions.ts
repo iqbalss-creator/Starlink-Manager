@@ -18,7 +18,7 @@ export async function getPayments() {
   return data
 }
 
-import { mikrotikQuery } from '@/app/api/mikrotik/route'
+import { mikrotikQuery } from '@/lib/mikrotik'
 
 function formatMikrotikDate(date: Date) {
   const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']

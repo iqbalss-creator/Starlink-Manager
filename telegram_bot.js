@@ -4,13 +4,14 @@
  * ═══════════════════════════════════════════════════════════════════
  *  Fitur:
  *   1. 🔍 Cari Voucher Lengkap (MikroTik Live + Supabase Database)
- *   2. ⏰ Deteksi Waktu Pertama Kali Login & Waktu Habis/Kadaluarsa
- *   3. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
- *   4. Remote Control MikroTik via Chat & Button
- *   5. Monitoring & Alert Otomatis (Server + MikroTik)
- *   6. Laporan Harian Otomatis (Jam 07:00 WIB)
- *   7. Last Backup Inspector & Instant Delivery
- *   8. Alert Keamanan (Login, Brute-force, Link down)
+ *   2. ⏰ Deteksi Waktu Pertama Kali Login (Mikhmon Records & Validity)
+ *   3. ⏳ Deteksi Waktu Habis & Sisa Masa Aktif Presisi
+ *   4. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
+ *   5. Remote Control MikroTik via Chat & Button
+ *   6. Monitoring & Alert Otomatis (Server + MikroTik)
+ *   7. Laporan Harian Otomatis (Jam 07:00 WIB)
+ *   8. Last Backup Inspector & Instant Delivery
+ *   9. Alert Keamanan (Login, Brute-force, Link down)
  * ═══════════════════════════════════════════════════════════════════
  */
 
@@ -250,36 +251,122 @@ function parseUptimeToMs(uptimeStr) {
     return totalMs
 }
 
+function getValidityDurationMs(profileName = '', onLoginStr = '', validityStr = '') {
+    const val = (validityStr || '').toLowerCase().trim()
+    if (val.endsWith('d')) return parseInt(val) * 24 * 3600 * 1000
+    if (val.endsWith('h')) return parseInt(val) * 3600 * 1000
+    if (val.endsWith('w')) return parseInt(val) * 7 * 24 * 3600 * 1000
+    if (val.endsWith('m')) return parseInt(val) * 60 * 1000
+
+    if (onLoginStr) {
+        const m = onLoginStr.match(/interval="?(\d+[dhwm])"?/i) || onLoginStr.match(/,(\d+[dhwm]),/i)
+        if (m) return getValidityDurationMs('', '', m[1])
+    }
+
+    const p = (profileName || '').toLowerCase()
+    if (p.includes('1-bulan') || p.includes('30-hari') || p.includes('30d') || p.includes('1bulan') || p.includes('bulanan')) return 30 * 24 * 3600 * 1000
+    if (p.includes('2-minggu') || p.includes('14-hari') || p.includes('14d')) return 14 * 24 * 3600 * 1000
+    if (p.includes('1-minggu') || p.includes('7-hari') || p.includes('7d') || p.includes('mingguan')) return 7 * 24 * 3600 * 1000
+    if (p.includes('3-hari') || p.includes('3d')) return 3 * 24 * 3600 * 1000
+    if (p.includes('2-hari') || p.includes('2d')) return 2 * 24 * 3600 * 1000
+    if (p.includes('1-hari') || p.includes('24-jam') || p.includes('24jam') || p.includes('1d') || p.includes('harian')) return 24 * 3600 * 1000
+    if (p.includes('12-jam') || p.includes('12jam') || p.includes('12h')) return 12 * 3600 * 1000
+    if (p.includes('6-jam') || p.includes('6jam') || p.includes('6h')) return 6 * 3600 * 1000
+    if (p.includes('5-jam') || p.includes('5jam') || p.includes('5h')) return 5 * 3600 * 1000
+    if (p.includes('3-jam') || p.includes('3jam') || p.includes('3h')) return 3 * 3600 * 1000
+    if (p.includes('2-jam') || p.includes('2jam') || p.includes('2h')) return 2 * 3600 * 1000
+    if (p.includes('1-jam') || p.includes('1jam') || p.includes('1h')) return 1 * 3600 * 1000
+
+    return 0
+}
+
 // ─── VOUCHER TIMELINE CALCULATOR (PERTAMA LOGIN & HABIS) ────────────────────
 
 async function getVoucherTimeline(username, mtUser, activeSession, dbVoucher) {
     let firstLoginStr = null
+    let currentSessionStr = null
     let expiryStr = null
     let remainingStr = null
     let expiryTimestamp = null
+    let mikhmonData = null
 
-    // 1. CARI WAKTU HABIS (EXPIRATION)
-    // A. Dari MikroTik Schedulers (exp-username)
+    // 1. CARI DARI MIKROTIK SCRIPTS (Mikhmon Login Records)
     try {
-        const schedulers = await mikrotikQuery('/system/scheduler/print')
-        const sched = schedulers.find(s => 
-            s.name === `exp-${username}` || 
-            s.name === username || 
-            s.name === `suspend-${username}` ||
-            (s.comment && s.comment.includes(username))
+        const scripts = await mikrotikQuery('/system/script/print')
+        const userScript = scripts.find(s => 
+            s.name.includes(`-|-${username}-|-`) || 
+            (s.name.startsWith('20') && s.name.includes(`-${username}-`)) ||
+            (s.comment === 'mikhmon' && s.name.includes(username))
         )
-        if (sched && sched['start-date']) {
-            const datePart = sched['start-date']
-            const timePart = sched['start-time'] || '00:00:00'
-            expiryStr = `${datePart} ${timePart}`
-            try {
-                const parsedDate = new Date(`${datePart} ${timePart}`)
-                if (!isNaN(parsedDate.getTime())) expiryTimestamp = parsedDate.getTime()
-            } catch (e) {}
+        if (userScript && userScript.name) {
+            const parts = userScript.name.split('-|-')
+            if (parts.length >= 7) {
+                const dateStr = parts[0].trim()
+                const timeStr = parts[1].trim()
+                const price = parts[3] ? parts[3].trim() : ''
+                const validity = parts[6] ? parts[6].trim() : ''
+                const origComment = parts[8] ? parts[8].trim() : ''
+
+                mikhmonData = { dateStr, timeStr, price, validity, origComment }
+
+                const firstDate = new Date(`${dateStr} ${timeStr}`)
+                if (!isNaN(firstDate.getTime())) {
+                    firstLoginStr = firstDate.toLocaleString('id-ID', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) + ' WIB'
+                }
+            }
         }
     } catch (e) {}
 
-    // B. Dari Database Supabase (vouchers.expiry_date)
+    // 2. CARI WAKTU HABIS (EXPIRATION)
+    // A. Dari comment MikroTik (Format "YYYY-MM-DD HH:mm:ss")
+    if (mtUser && mtUser.comment) {
+        const dateMatch = mtUser.comment.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?)/)
+        if (dateMatch) {
+            const expDate = new Date(dateMatch[1])
+            if (!isNaN(expDate.getTime())) {
+                expiryTimestamp = expDate.getTime()
+                expiryStr = expDate.toLocaleString('id-ID', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) + ' WIB'
+            }
+        }
+    }
+
+    // B. Dari Scheduler MikroTik
+    if (!expiryStr) {
+        try {
+            const schedulers = await mikrotikQuery('/system/scheduler/print')
+            const sched = schedulers.find(s => 
+                s.name === `exp-${username}` || 
+                s.name === username || 
+                s.name === `suspend-${username}` ||
+                (s.comment && s.comment.includes(username))
+            )
+            if (sched && sched['start-date']) {
+                const datePart = sched['start-date']
+                const timePart = sched['start-time'] || '00:00:00'
+                expiryStr = `${datePart} ${timePart}`
+                try {
+                    const parsedDate = new Date(`${datePart} ${timePart}`)
+                    if (!isNaN(parsedDate.getTime())) expiryTimestamp = parsedDate.getTime()
+                } catch (e) {}
+            }
+        } catch (e) {}
+    }
+
+    // C. Dari Database Supabase
     if (!expiryStr && dbVoucher && dbVoucher.expiry_date) {
         const expDate = new Date(dbVoucher.expiry_date)
         if (!isNaN(expDate.getTime())) {
@@ -295,27 +382,30 @@ async function getVoucherTimeline(username, mtUser, activeSession, dbVoucher) {
         }
     }
 
-    // C. Dari MikroTik Comment (Format Mikhmon: "YYYY-MM-DD HH:mm:ss")
-    if (!expiryStr && mtUser && mtUser.comment) {
-        const dateMatch = mtUser.comment.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?)/)
-        if (dateMatch) {
-            const expDate = new Date(dateMatch[1])
-            if (!isNaN(expDate.getTime())) {
-                expiryTimestamp = expDate.getTime()
-                expiryStr = expDate.toLocaleString('id-ID', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                }) + ' WIB'
-            } else {
-                expiryStr = dateMatch[1]
-            }
+    // 3. JIKA PERTAMA LOGIN BELUM KETEMU, DEDUKSI DARI EXPIRY - PROFILE VALIDITY
+    if (!firstLoginStr && expiryTimestamp) {
+        let profileOnLogin = ''
+        try {
+            const profiles = await mikrotikQuery('/ip/hotspot/user/profile/print')
+            const prof = profiles.find(p => p.name === mtUser?.profile)
+            if (prof) profileOnLogin = prof['on-login'] || ''
+        } catch (e) {}
+
+        const durationMs = getValidityDurationMs(mtUser?.profile, profileOnLogin, mikhmonData?.validity)
+        if (durationMs > 0) {
+            const calculatedFirstLogin = new Date(expiryTimestamp - durationMs)
+            firstLoginStr = calculatedFirstLogin.toLocaleString('id-ID', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) + ' WIB'
         }
     }
 
-    // Hitung Sisa Waktu jika expiryTimestamp ditemukan
+    // 4. HITUNG SISA WAKTU
     if (expiryTimestamp) {
         const diffMs = expiryTimestamp - Date.now()
         if (diffMs > 0) {
@@ -340,62 +430,28 @@ async function getVoucherTimeline(username, mtUser, activeSession, dbVoucher) {
         }
     }
 
-    // 2. CARI WAKTU PERTAMA KALI LOGIN
-    // A. Dari system_logs Supabase
-    if (dbVoucher && CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY) {
-        try {
-            const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/system_logs?entity_id=eq.${dbVoucher.id}&entity_type=eq.LOGIN_HISTORY&select=created_at,new_data&order=created_at.asc&limit=1`, {
-                headers: {
-                    'apikey': CONFIG.SUPABASE_KEY,
-                    'Authorization': `Bearer ${CONFIG.SUPABASE_KEY}`
-                }
-            })
-            if (res.ok) {
-                const logs = await res.json()
-                if (logs && logs.length > 0) {
-                    const l = logs[0]
-                    const sessionStart = l.new_data?.session_start ? new Date(l.new_data.session_start) : new Date(l.created_at)
-                    firstLoginStr = sessionStart.toLocaleString('id-ID', {
-                        weekday: 'short',
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    }) + ' WIB'
-                }
-            }
-        } catch (e) {}
-    }
-
-    // B. Dari sesi aktif jika sedang online
-    if (!firstLoginStr && activeSession && activeSession.uptime) {
+    // 5. SESI LOGIN BERJALAN SAAT INI (Jika Online)
+    if (activeSession && activeSession.uptime) {
         const ms = parseUptimeToMs(activeSession.uptime)
         const loginDate = new Date(Date.now() - ms)
-        firstLoginStr = loginDate.toLocaleString('id-ID', {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        }) + ' WIB (Sedang Online)'
+        currentSessionStr = `${loginDate.toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB (Uptime: ${formatUptime(activeSession.uptime)})`
     }
 
-    // C. Jika router mencatat uptime user > 0 tapi saat ini offline
-    if (!firstLoginStr && mtUser && mtUser.uptime && mtUser.uptime !== '0s' && mtUser.uptime !== '') {
-        firstLoginStr = `Tercatat Pernah Login (Total Uptime: ${mtUser.uptime})`
-    }
-
-    // D. Default jika belum pernah dipakai
+    // 6. DEFAULT JIKA BELUM LOGIN SAMA SEKALI
     if (!firstLoginStr) {
-        firstLoginStr = '⚪ Belum Pernah Login (Voucher Baru)'
+        if (mtUser && mtUser.uptime && mtUser.uptime !== '0s' && mtUser.uptime !== '') {
+            firstLoginStr = `Tercatat Pernah Aktif (Total Akumulasi: ${mtUser.uptime})`
+        } else {
+            firstLoginStr = `⚪ Belum Pernah Login (Voucher Baru)`
+        }
     }
 
     return {
         firstLogin: firstLoginStr,
-        expiry: expiryStr || '♾️ Unlimited / Mengikuti Durasi Profil',
-        remaining: remainingStr
+        currentSession: currentSessionStr,
+        expiry: expiryStr || '♾️ Unlimited / Sesuai Durasi Profil',
+        remaining: remainingStr,
+        mikhmonData
     }
 }
 
@@ -483,7 +539,7 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timel
     const isOnline = !!activeSession
     const isDisabled = mtUser.disabled === 'true'
     const statusText = isDisabled ? '🔴 Nonaktif (Disabled)' : '🟢 Aktif (Enabled)'
-    const onlineText = isOnline ? `🟢 <b>ONLINE SEKARANG</b>\n   • IP Address: <code>${activeSession.address || '-'}</code>\n   • MAC Address: <code>${activeSession['mac-address'] || '-'}</code>\n   • Sesi Aktif: ${formatUptime(activeSession.uptime)}` : '⚪ <b>OFFLINE / Tidak Terhubung</b>'
+    const onlineText = isOnline ? `🟢 <b>ONLINE SEKARANG</b>\n   • IP Address: <code>${activeSession.address || '-'}</code>\n   • MAC Address: <code>${activeSession['mac-address'] || '-'}</code>\n   • Sesi Berjalan: ${formatUptime(activeSession.uptime)}` : '⚪ <b>OFFLINE / Tidak Terhubung</b>'
 
     const txBytes = formatBytes(mtUser['bytes-in'] || 0)
     const rxBytes = formatBytes(mtUser['bytes-out'] || 0)
@@ -502,6 +558,9 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timel
 
     text += `⏰ <b>Waktu & Masa Aktif:</b>\n`
     text += `• Pertama Kali Login: <b>${timeline.firstLogin}</b>\n`
+    if (timeline.currentSession) {
+        text += `• Sesi Login Hari Ini: <b>${timeline.currentSession}</b>\n`
+    }
     text += `• Waktu Habis / Kadaluarsa: <b>${timeline.expiry}</b>\n`
     if (timeline.remaining) {
         text += `• Status Masa Aktif: <b>${timeline.remaining}</b>\n`
@@ -525,6 +584,10 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timel
         text += `• Status Pembayaran: <b>${dbVoucher.payment_status || 'Belum Lunas'}</b>\n`
         if (dbVoucher.agents) {
             text += `• Agen: ${dbVoucher.agents.name}\n`
+        }
+    } else if (timeline.mikhmonData) {
+        if (timeline.mikhmonData.price) {
+            text += `\n🏷️ <b>Harga Mikhmon:</b> Rp ${parseInt(timeline.mikhmonData.price).toLocaleString('id-ID')}\n`
         }
     }
 
@@ -792,6 +855,7 @@ COMMANDS['/lastbackup'] = async (chatId) => {
         }
         if (latestMtRsc) {
             const size = (latestMtRsc.stat.size / 1024).toFixed(2)
+            const date = new Date(latestMtRsc.stat.mtime).toLocaleString('id-ID')
             text += `📜 <b>MikroTik Config Export (.rsc):</b>\n   File: <code>${latestMtRsc.name}</code>\n   Ukuran: ${size} KB\n\n`
         }
 
@@ -1064,7 +1128,7 @@ async function processMessage(msg) {
         return sendMessage(chatId, 'Akses Ditolak. Bot ini hanya dapat diakses oleh Admin.', null)
     }
 
-    // Check if user is in an active state (e.g. typing voucher search query)
+    // Check if user is in an active state
     if (userState[chatId] === 'awaiting_voucher_search' && !text.startsWith('/')) {
         delete userState[chatId]
         return handleVoucherSearch(chatId, text)
@@ -1136,7 +1200,7 @@ function startSchedulers() {
 
 async function main() {
     console.log('=================================================')
-    console.log(' Starlink Manager Telegram Bot (Timeline Active)')
+    console.log(' Starlink Manager Telegram Bot (Accurate Timeline)')
     console.log('=================================================')
     console.log(`Bot Token: ...${CONFIG.BOT_TOKEN.slice(-8)}`)
     console.log(`Chat ID: ${CONFIG.CHAT_ID}`)

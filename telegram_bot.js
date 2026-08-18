@@ -4,12 +4,13 @@
  * ═══════════════════════════════════════════════════════════════════
  *  Fitur:
  *   1. 🔍 Cari Voucher Lengkap (MikroTik Live + Supabase Database)
- *   2. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
- *   3. Remote Control MikroTik via Chat & Button
- *   4. Monitoring & Alert Otomatis (Server + MikroTik)
- *   5. Laporan Harian Otomatis (Jam 07:00 WIB)
- *   6. Last Backup Inspector & Instant Delivery
- *   7. Alert Keamanan (Login, Brute-force, Link down)
+ *   2. ⏰ Deteksi Waktu Pertama Kali Login & Waktu Habis/Kadaluarsa
+ *   3. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
+ *   4. Remote Control MikroTik via Chat & Button
+ *   5. Monitoring & Alert Otomatis (Server + MikroTik)
+ *   6. Laporan Harian Otomatis (Jam 07:00 WIB)
+ *   7. Last Backup Inspector & Instant Delivery
+ *   8. Alert Keamanan (Login, Brute-force, Link down)
  * ═══════════════════════════════════════════════════════════════════
  */
 
@@ -44,7 +45,7 @@ function loadEnv() {
 const TELEGRAM_API = `https://api.telegram.org/bot${CONFIG.BOT_TOKEN}`
 let lastUpdateId = 0
 
-// State management for awaiting user input (e.g. waiting for voucher code)
+// State management for awaiting user input
 const userState = {}
 
 // ─── MENU KEYBOARD (TOMBOL TELEGRAM) ────────────────────────────────────────
@@ -233,6 +234,171 @@ function isAuthorized(chatId) {
     return String(chatId) === String(CONFIG.CHAT_ID)
 }
 
+function parseUptimeToMs(uptimeStr) {
+    if (!uptimeStr) return 0
+    let totalMs = 0
+    const w = uptimeStr.match(/(\d+)w/)
+    const d = uptimeStr.match(/(\d+)d/)
+    const h = uptimeStr.match(/(\d+)h/)
+    const m = uptimeStr.match(/(\d+)m/)
+    const s = uptimeStr.match(/(\d+)s/)
+    if (w) totalMs += parseInt(w[1]) * 7 * 24 * 3600 * 1000
+    if (d) totalMs += parseInt(d[1]) * 24 * 3600 * 1000
+    if (h) totalMs += parseInt(h[1]) * 3600 * 1000
+    if (m) totalMs += parseInt(m[1]) * 60 * 1000
+    if (s) totalMs += parseInt(s[1]) * 1000
+    return totalMs
+}
+
+// ─── VOUCHER TIMELINE CALCULATOR (PERTAMA LOGIN & HABIS) ────────────────────
+
+async function getVoucherTimeline(username, mtUser, activeSession, dbVoucher) {
+    let firstLoginStr = null
+    let expiryStr = null
+    let remainingStr = null
+    let expiryTimestamp = null
+
+    // 1. CARI WAKTU HABIS (EXPIRATION)
+    // A. Dari MikroTik Schedulers (exp-username)
+    try {
+        const schedulers = await mikrotikQuery('/system/scheduler/print')
+        const sched = schedulers.find(s => 
+            s.name === `exp-${username}` || 
+            s.name === username || 
+            s.name === `suspend-${username}` ||
+            (s.comment && s.comment.includes(username))
+        )
+        if (sched && sched['start-date']) {
+            const datePart = sched['start-date']
+            const timePart = sched['start-time'] || '00:00:00'
+            expiryStr = `${datePart} ${timePart}`
+            try {
+                const parsedDate = new Date(`${datePart} ${timePart}`)
+                if (!isNaN(parsedDate.getTime())) expiryTimestamp = parsedDate.getTime()
+            } catch (e) {}
+        }
+    } catch (e) {}
+
+    // B. Dari Database Supabase (vouchers.expiry_date)
+    if (!expiryStr && dbVoucher && dbVoucher.expiry_date) {
+        const expDate = new Date(dbVoucher.expiry_date)
+        if (!isNaN(expDate.getTime())) {
+            expiryTimestamp = expDate.getTime()
+            expiryStr = expDate.toLocaleString('id-ID', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) + ' WIB'
+        }
+    }
+
+    // C. Dari MikroTik Comment (Format Mikhmon: "YYYY-MM-DD HH:mm:ss")
+    if (!expiryStr && mtUser && mtUser.comment) {
+        const dateMatch = mtUser.comment.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?)/)
+        if (dateMatch) {
+            const expDate = new Date(dateMatch[1])
+            if (!isNaN(expDate.getTime())) {
+                expiryTimestamp = expDate.getTime()
+                expiryStr = expDate.toLocaleString('id-ID', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) + ' WIB'
+            } else {
+                expiryStr = dateMatch[1]
+            }
+        }
+    }
+
+    // Hitung Sisa Waktu jika expiryTimestamp ditemukan
+    if (expiryTimestamp) {
+        const diffMs = expiryTimestamp - Date.now()
+        if (diffMs > 0) {
+            const totalHours = Math.floor(diffMs / (1000 * 60 * 60))
+            const days = Math.floor(totalHours / 24)
+            const remainingHours = totalHours % 24
+            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+            if (days > 0) {
+                remainingStr = `🟢 Masih Berlaku (Sisa ${days} Hari ${remainingHours} Jam)`
+            } else {
+                remainingStr = `🟢 Masih Berlaku (Sisa ${totalHours} Jam ${minutes} Menit)`
+            }
+        } else {
+            const pastMs = Math.abs(diffMs)
+            const pastHours = Math.floor(pastMs / (1000 * 60 * 60))
+            const pastDays = Math.floor(pastHours / 24)
+            if (pastDays > 0) {
+                remainingStr = `🔴 Sudah Habis (Lewat ${pastDays} hari yang lalu)`
+            } else {
+                remainingStr = `🔴 Sudah Habis (Lewat ${pastHours} jam yang lalu)`
+            }
+        }
+    }
+
+    // 2. CARI WAKTU PERTAMA KALI LOGIN
+    // A. Dari system_logs Supabase
+    if (dbVoucher && CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY) {
+        try {
+            const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/system_logs?entity_id=eq.${dbVoucher.id}&entity_type=eq.LOGIN_HISTORY&select=created_at,new_data&order=created_at.asc&limit=1`, {
+                headers: {
+                    'apikey': CONFIG.SUPABASE_KEY,
+                    'Authorization': `Bearer ${CONFIG.SUPABASE_KEY}`
+                }
+            })
+            if (res.ok) {
+                const logs = await res.json()
+                if (logs && logs.length > 0) {
+                    const l = logs[0]
+                    const sessionStart = l.new_data?.session_start ? new Date(l.new_data.session_start) : new Date(l.created_at)
+                    firstLoginStr = sessionStart.toLocaleString('id-ID', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) + ' WIB'
+                }
+            }
+        } catch (e) {}
+    }
+
+    // B. Dari sesi aktif jika sedang online
+    if (!firstLoginStr && activeSession && activeSession.uptime) {
+        const ms = parseUptimeToMs(activeSession.uptime)
+        const loginDate = new Date(Date.now() - ms)
+        firstLoginStr = loginDate.toLocaleString('id-ID', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        }) + ' WIB (Sedang Online)'
+    }
+
+    // C. Jika router mencatat uptime user > 0 tapi saat ini offline
+    if (!firstLoginStr && mtUser && mtUser.uptime && mtUser.uptime !== '0s' && mtUser.uptime !== '') {
+        firstLoginStr = `Tercatat Pernah Login (Total Uptime: ${mtUser.uptime})`
+    }
+
+    // D. Default jika belum pernah dipakai
+    if (!firstLoginStr) {
+        firstLoginStr = '⚪ Belum Pernah Login (Voucher Baru)'
+    }
+
+    return {
+        firstLogin: firstLoginStr,
+        expiry: expiryStr || '♾️ Unlimited / Mengikuti Durasi Profil',
+        remaining: remainingStr
+    }
+}
+
 // ─── VOUCHER SEARCH ENGINE (MIKROTIK + DATABASE) ────────────────────────────
 
 async function handleVoucherSearch(chatId, searchQuery) {
@@ -256,7 +422,6 @@ async function handleVoucherSearch(chatId, searchQuery) {
 
         // 2. Ambil data dari Database Supabase
         let dbVoucher = null
-        let dbCustomer = null
         if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY) {
             try {
                 const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/vouchers?mikrotik_username=ilike.*${encodeURIComponent(q)}*&select=*,packages(name,price),agents(name),customers(name,whatsapp_number)`, {
@@ -281,8 +446,9 @@ async function handleVoucherSearch(chatId, searchQuery) {
         if (matchedMt.length === 1 || (matchedMt.length > 1 && matchedMt.some(u => u.name.toLowerCase() === q.toLowerCase()))) {
             const u = matchedMt.find(item => item.name.toLowerCase() === q.toLowerCase()) || matchedMt[0]
             const activeSession = mtActive.find(a => a.user === u.name)
+            const timeline = await getVoucherTimeline(u.name, u, activeSession, dbVoucher)
 
-            return renderVoucherDetailCard(chatId, u, activeSession, dbVoucher)
+            return renderVoucherDetailCard(chatId, u, activeSession, dbVoucher, timeline)
         }
 
         // Jika ditemukan banyak kecocokan (lebih dari 1)
@@ -304,7 +470,8 @@ async function handleVoucherSearch(chatId, searchQuery) {
 
         // Jika hanya ada di Database
         if (dbVoucher && matchedMt.length === 0) {
-            return renderDbOnlyVoucherCard(chatId, dbVoucher)
+            const timeline = await getVoucherTimeline(dbVoucher.mikrotik_username, null, null, dbVoucher)
+            return renderDbOnlyVoucherCard(chatId, dbVoucher, timeline)
         }
 
     } catch (e) {
@@ -312,7 +479,7 @@ async function handleVoucherSearch(chatId, searchQuery) {
     }
 }
 
-function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher) {
+function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timeline) {
     const isOnline = !!activeSession
     const isDisabled = mtUser.disabled === 'true'
     const statusText = isDisabled ? '🔴 Nonaktif (Disabled)' : '🟢 Aktif (Enabled)'
@@ -333,13 +500,19 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher) {
     text += `⚡ <b>Status Akun:</b> ${statusText}\n`
     text += `🌐 <b>Status Koneksi:</b> ${onlineText}\n\n`
 
-    text += `📊 <b>Penggunaan & Kuota:</b>\n`
+    text += `⏰ <b>Waktu & Masa Aktif:</b>\n`
+    text += `• Pertama Kali Login: <b>${timeline.firstLogin}</b>\n`
+    text += `• Waktu Habis / Kadaluarsa: <b>${timeline.expiry}</b>\n`
+    if (timeline.remaining) {
+        text += `• Status Masa Aktif: <b>${timeline.remaining}</b>\n`
+    }
+
+    text += `\n📊 <b>Penggunaan & Kuota:</b>\n`
     text += `• Waktu Terpakai: <b>${uptimeUsed}</b> / ${limitUptime}\n`
     text += `• Total Data: <b>${totalUsage}</b> (⬇️ ${rxBytes} | ⬆️ ${txBytes})\n`
     text += `• Batas Kuota: <b>${limitBytes}</b>\n`
     if (mtUser.comment) text += `• Catatan: <i>${mtUser.comment}</i>\n`
 
-    // Info dari Database jika ada
     if (dbVoucher) {
         text += `\n💾 <b>Data Billing & Pelanggan:</b>\n`
         if (dbVoucher.customers) {
@@ -350,9 +523,6 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher) {
             text += `• Harga Paket: Rp ${(dbVoucher.packages.price || 0).toLocaleString('id-ID')}\n`
         }
         text += `• Status Pembayaran: <b>${dbVoucher.payment_status || 'Belum Lunas'}</b>\n`
-        if (dbVoucher.expiry_date) {
-            text += `• Tanggal Kadaluarsa: <b>${new Date(dbVoucher.expiry_date).toLocaleDateString('id-ID')}</b>\n`
-        }
         if (dbVoucher.agents) {
             text += `• Agen: ${dbVoucher.agents.name}\n`
         }
@@ -374,22 +544,27 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher) {
     return sendMessage(chatId, text, { inline_keyboard: inlineBtns })
 }
 
-function renderDbOnlyVoucherCard(chatId, dbVoucher) {
+function renderDbOnlyVoucherCard(chatId, dbVoucher, timeline) {
     let text = `🎟️ <b>INFORMASI VOUCHER (HANYA DATABASE)</b>\n`
     text += `━━━━━━━━━━━━━━━━━━━━━\n`
     text += `👤 <b>Kode:</b> <code>${dbVoucher.mikrotik_username}</code>\n`
     text += `⚠️ <i>Catatan: Voucher ini belum terdaftar di MikroTik live router.</i>\n\n`
+    
+    text += `⏰ <b>Waktu & Masa Aktif:</b>\n`
+    text += `• Pertama Kali Login: <b>${timeline.firstLogin}</b>\n`
+    text += `• Waktu Habis / Kadaluarsa: <b>${timeline.expiry}</b>\n`
+    if (timeline.remaining) {
+        text += `• Status Masa Aktif: <b>${timeline.remaining}</b>\n`
+    }
+    
     if (dbVoucher.customers) {
-        text += `• Pelanggan: <b>${dbVoucher.customers.name || '-'}</b>\n`
+        text += `\n• Pelanggan: <b>${dbVoucher.customers.name || '-'}</b>\n`
         text += `• WhatsApp: <code>${dbVoucher.customers.whatsapp_number || '-'}</code>\n`
     }
     if (dbVoucher.packages) {
         text += `• Paket: <b>${dbVoucher.packages.name}</b> (Rp ${(dbVoucher.packages.price || 0).toLocaleString('id-ID')})\n`
     }
     text += `• Status Pembayaran: <b>${dbVoucher.payment_status || 'Belum Lunas'}</b>\n`
-    if (dbVoucher.expiry_date) {
-        text += `• Tanggal Kadaluarsa: <b>${new Date(dbVoucher.expiry_date).toLocaleDateString('id-ID')}</b>\n`
-    }
     text += `━━━━━━━━━━━━━━━━━━━━━`
 
     return sendMessage(chatId, text, MAIN_KEYBOARD)
@@ -405,7 +580,7 @@ COMMANDS['/start'] = COMMANDS['/help'] = async (chatId) => {
 Gunakan tombol menu di bawah atau ketik perintah langsung:
 
 <b>🔍 Pencarian & Manajemen Voucher:</b>
-• <b>/voucher &lt;kode&gt;</b> atau <b>/cari &lt;kode&gt;</b> - Cari info detail voucher
+• <b>/voucher &lt;kode&gt;</b> atau <b>/cari &lt;kode&gt;</b> - Info detail voucher & waktu kadaluarsa
 • <b>/active</b> - User voucher yang sedang online
 • <b>/users</b> - Seluruh user voucher yang terdaftar
 • <b>/adduser &lt;nama&gt; &lt;pass&gt; [profile]</b> - Tambah user baru
@@ -825,7 +1000,7 @@ async function processCallbackQuery(cq) {
     if (data.startsWith('vc_toggle_')) {
         const parts = data.split('_')
         const username = parts[2]
-        const action = parts[3] // 'enable' or 'disable'
+        const action = parts[3]
         try {
             const cmd = action === 'enable' ? '/ip/hotspot/user/enable' : '/ip/hotspot/user/disable'
             await mikrotikQuery(cmd, [`=numbers=${username}`])
@@ -947,13 +1122,8 @@ async function pollLoop() {
 // ─── SCHEDULER ──────────────────────────────────────────────────────────────
 
 function startSchedulers() {
-    // Health check every 5 minutes
     setInterval(() => checkHealth(), 5 * 60 * 1000)
-
-    // Security alert check every 2 minutes
     setInterval(() => checkSecurityAlerts(), 2 * 60 * 1000)
-
-    // Daily report at 07:00 WIB (UTC+7 = 00:00 UTC)
     setInterval(() => {
         const now = new Date()
         if (now.getUTCHours() === 0 && now.getUTCMinutes() === 0) {
@@ -966,15 +1136,12 @@ function startSchedulers() {
 
 async function main() {
     console.log('=================================================')
-    console.log(' Starlink Manager Telegram Bot (Voucher Search Active)')
+    console.log(' Starlink Manager Telegram Bot (Timeline Active)')
     console.log('=================================================')
     console.log(`Bot Token: ...${CONFIG.BOT_TOKEN.slice(-8)}`)
     console.log(`Chat ID: ${CONFIG.CHAT_ID}`)
     console.log(`MikroTik: ${CONFIG.MT_HOST}:${CONFIG.MT_PORT}`)
     console.log('')
-
-    // Send startup notification with interactive keyboard
-    await sendMessage(CONFIG.CHAT_ID, `<b>Starlink Manager Bot v2.1 Siap!</b> 🚀\n\nFitur <b>🔍 Cari Voucher Lengkap</b> telah aktif.\nTekan tombol <b>🔍 Cari Voucher</b> di bawah atau ketik <code>/voucher &lt;kode&gt;</code> untuk mencari voucher.`, MAIN_KEYBOARD)
 
     try {
         const logs = await mikrotikQuery('/log/print')

@@ -78,6 +78,7 @@ export const sidebarNavigation: NavItem[] = [
     icon: Network,
     children: [
       { title: "MikroTik", href: "/dashboard/jaringan/mikrotik", icon: Router },
+      { title: "Aktivitas Pelanggan", href: "/dashboard/jaringan/aktivitas", icon: Activity },
       { title: "Starlink", href: "/dashboard/jaringan/starlink", icon: Satellite },
     ],
   },

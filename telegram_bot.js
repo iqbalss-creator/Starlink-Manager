@@ -4,14 +4,15 @@
  * ═══════════════════════════════════════════════════════════════════
  *  Fitur:
  *   1. 🔍 Cari Voucher Lengkap (MikroTik Live + Supabase Database)
- *   2. ⏰ Deteksi Waktu Pertama Kali Login (Mikhmon Records & Validity)
- *   3. ⏳ Deteksi Waktu Habis & Sisa Masa Aktif Presisi
- *   4. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
- *   5. Remote Control MikroTik via Chat & Button
- *   6. Monitoring & Alert Otomatis (Server + MikroTik)
- *   7. Laporan Harian Otomatis (Jam 07:00 WIB)
- *   8. Last Backup Inspector & Instant Delivery
- *   9. Alert Keamanan (Login, Brute-force, Link down)
+ *   2. 📱 Informasi Perangkat / Device (Model, OS, Hostname, MAC, IP)
+ *   3. ⏰ Deteksi Waktu Pertama Kali Login (Mikhmon Records & Validity)
+ *   4. ⏳ Deteksi Waktu Habis & Sisa Masa Aktif Presisi
+ *   5. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
+ *   6. Remote Control MikroTik via Chat & Button
+ *   7. Monitoring & Alert Otomatis (Server + MikroTik)
+ *   8. Laporan Harian Otomatis (Jam 07:00 WIB)
+ *   9. Last Backup Inspector & Instant Delivery
+ *   10. Alert Keamanan (Login, Brute-force, Link down)
  * ═══════════════════════════════════════════════════════════════════
  */
 
@@ -280,6 +281,95 @@ function getValidityDurationMs(profileName = '', onLoginStr = '', validityStr = 
     return 0
 }
 
+// ─── DEVICE INFORMATION INSPECTOR (DHCP & HOTSPOT LEASES) ───────────────────
+
+async function getDeviceInfo(username, mtUser, activeSession, mikhmonData) {
+    let macAddress = null
+    let ipAddress = null
+    let loginBy = null
+
+    if (activeSession) {
+        macAddress = activeSession['mac-address']
+        ipAddress = activeSession.address
+        loginBy = activeSession['login-by'] || 'HTTP Login'
+    }
+
+    if (!macAddress) {
+        try {
+            const cookies = await mikrotikQuery('/ip/hotspot/cookie/print')
+            const userCookie = cookies.find(c => c.user === username)
+            if (userCookie && userCookie['mac-address']) {
+                macAddress = userCookie['mac-address']
+                loginBy = 'MAC Cookie'
+            }
+        } catch (e) {}
+    }
+
+    if (!macAddress && mikhmonData && mikhmonData.mac) {
+        macAddress = mikhmonData.mac
+    }
+
+    let hostName = null
+    let osClass = null
+    let lastSeen = null
+    let dhcpIp = null
+
+    try {
+        const leases = await mikrotikQuery('/ip/dhcp-server/lease/print')
+        let matchedLease = null
+        if (macAddress) {
+            matchedLease = leases.find(l => 
+                (l['mac-address'] && l['mac-address'].toLowerCase() === macAddress.toLowerCase()) ||
+                (l['active-mac-address'] && l['active-mac-address'].toLowerCase() === macAddress.toLowerCase())
+            )
+        }
+        if (!matchedLease && ipAddress) {
+            matchedLease = leases.find(l => l.address === ipAddress || l['active-address'] === ipAddress)
+        }
+
+        if (matchedLease) {
+            hostName = matchedLease['host-name'] || matchedLease['active-host-name']
+            osClass = matchedLease['class-id']
+            lastSeen = matchedLease['last-seen']
+            dhcpIp = matchedLease['active-address'] || matchedLease.address
+            if (!macAddress) macAddress = matchedLease['mac-address'] || matchedLease['active-mac-address']
+        }
+    } catch (e) {}
+
+    // Formatting OS & Model information
+    let osFormatted = null
+    if (osClass) {
+        if (osClass.startsWith('android-dhcp-')) {
+            const ver = osClass.replace('android-dhcp-', '')
+            osFormatted = `Android ${ver}`
+        } else if (osClass.includes('MSFT')) {
+            osFormatted = 'Windows PC / Laptop'
+        } else if (osClass.toLowerCase().includes('apple') || osClass.toLowerCase().includes('ios')) {
+            osFormatted = 'Apple iOS (iPhone/iPad)'
+        } else {
+            osFormatted = osClass
+        }
+    }
+
+    // Check MAC Randomization (Private MAC in iOS/Android)
+    let macType = ''
+    if (macAddress) {
+        const secondChar = macAddress[1]?.toUpperCase()
+        if (['2', '6', 'A', 'E'].includes(secondChar)) {
+            macType = ' (Private / MAC Acak)'
+        }
+    }
+
+    return {
+        macAddress: macAddress ? `${macAddress}${macType}` : null,
+        ipAddress: ipAddress || dhcpIp,
+        hostName: hostName || (osFormatted ? `${osFormatted} Device` : null),
+        osFormatted,
+        loginBy: loginBy ? (loginBy === 'mac-cookie' ? 'Auto Login (MAC Cookie)' : loginBy) : null,
+        lastSeen: lastSeen ? `${lastSeen} lalu` : null
+    }
+}
+
 // ─── VOUCHER TIMELINE CALCULATOR (PERTAMA LOGIN & HABIS) ────────────────────
 
 async function getVoucherTimeline(username, mtUser, activeSession, dbVoucher) {
@@ -304,10 +394,12 @@ async function getVoucherTimeline(username, mtUser, activeSession, dbVoucher) {
                 const dateStr = parts[0].trim()
                 const timeStr = parts[1].trim()
                 const price = parts[3] ? parts[3].trim() : ''
+                const ip = parts[4] ? parts[4].trim() : ''
+                const mac = parts[5] ? parts[5].trim() : ''
                 const validity = parts[6] ? parts[6].trim() : ''
                 const origComment = parts[8] ? parts[8].trim() : ''
 
-                mikhmonData = { dateStr, timeStr, price, validity, origComment }
+                mikhmonData = { dateStr, timeStr, price, ip, mac, validity, origComment }
 
                 const firstDate = new Date(`${dateStr} ${timeStr}`)
                 if (!isNaN(firstDate.getTime())) {
@@ -503,8 +595,9 @@ async function handleVoucherSearch(chatId, searchQuery) {
             const u = matchedMt.find(item => item.name.toLowerCase() === q.toLowerCase()) || matchedMt[0]
             const activeSession = mtActive.find(a => a.user === u.name)
             const timeline = await getVoucherTimeline(u.name, u, activeSession, dbVoucher)
+            const deviceInfo = await getDeviceInfo(u.name, u, activeSession, timeline.mikhmonData)
 
-            return renderVoucherDetailCard(chatId, u, activeSession, dbVoucher, timeline)
+            return renderVoucherDetailCard(chatId, u, activeSession, dbVoucher, timeline, deviceInfo)
         }
 
         // Jika ditemukan banyak kecocokan (lebih dari 1)
@@ -535,11 +628,11 @@ async function handleVoucherSearch(chatId, searchQuery) {
     }
 }
 
-function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timeline) {
+function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timeline, deviceInfo) {
     const isOnline = !!activeSession
     const isDisabled = mtUser.disabled === 'true'
     const statusText = isDisabled ? '🔴 Nonaktif (Disabled)' : '🟢 Aktif (Enabled)'
-    const onlineText = isOnline ? `🟢 <b>ONLINE SEKARANG</b>\n   • IP Address: <code>${activeSession.address || '-'}</code>\n   • MAC Address: <code>${activeSession['mac-address'] || '-'}</code>\n   • Sesi Berjalan: ${formatUptime(activeSession.uptime)}` : '⚪ <b>OFFLINE / Tidak Terhubung</b>'
+    const onlineText = isOnline ? `🟢 <b>ONLINE SEKARANG</b>\n   • Sesi Berjalan: <b>${formatUptime(activeSession.uptime)}</b>` : '⚪ <b>OFFLINE / Tidak Terhubung</b>'
 
     const txBytes = formatBytes(mtUser['bytes-in'] || 0)
     const rxBytes = formatBytes(mtUser['bytes-out'] || 0)
@@ -556,6 +649,31 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timel
     text += `⚡ <b>Status Akun:</b> ${statusText}\n`
     text += `🌐 <b>Status Koneksi:</b> ${onlineText}\n\n`
 
+    // 📱 Informasi Perangkat (Device)
+    if (deviceInfo && (deviceInfo.macAddress || deviceInfo.hostName || deviceInfo.ipAddress)) {
+        text += `📱 <b>Informasi Perangkat (Device):</b>\n`
+        if (deviceInfo.hostName) {
+            text += `• Nama Perangkat: <b>${deviceInfo.hostName}</b>\n`
+        }
+        if (deviceInfo.osFormatted && (!deviceInfo.hostName || !deviceInfo.hostName.toLowerCase().includes(deviceInfo.osFormatted.toLowerCase()))) {
+            text += `• Sistem Operasi: <b>${deviceInfo.osFormatted}</b>\n`
+        }
+        if (deviceInfo.macAddress) {
+            text += `• MAC Address: <code>${deviceInfo.macAddress}</code>\n`
+        }
+        if (deviceInfo.ipAddress) {
+            text += `• IP Address: <code>${deviceInfo.ipAddress}</code>\n`
+        }
+        if (deviceInfo.loginBy) {
+            text += `• Metode Login: ${deviceInfo.loginBy}\n`
+        }
+        if (deviceInfo.lastSeen && !isOnline) {
+            text += `• Terakhir Terlihat: ${deviceInfo.lastSeen}\n`
+        }
+        text += `\n`
+    }
+
+    // ⏰ Waktu & Masa Aktif
     text += `⏰ <b>Waktu & Masa Aktif:</b>\n`
     text += `• Pertama Kali Login: <b>${timeline.firstLogin}</b>\n`
     if (timeline.currentSession) {
@@ -566,12 +684,14 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timel
         text += `• Status Masa Aktif: <b>${timeline.remaining}</b>\n`
     }
 
+    // 📊 Penggunaan & Kuota
     text += `\n📊 <b>Penggunaan & Kuota:</b>\n`
     text += `• Waktu Terpakai: <b>${uptimeUsed}</b> / ${limitUptime}\n`
     text += `• Total Data: <b>${totalUsage}</b> (⬇️ ${rxBytes} | ⬆️ ${txBytes})\n`
     text += `• Batas Kuota: <b>${limitBytes}</b>\n`
     if (mtUser.comment) text += `• Catatan: <i>${mtUser.comment}</i>\n`
 
+    // 💾 Data Billing
     if (dbVoucher) {
         text += `\n💾 <b>Data Billing & Pelanggan:</b>\n`
         if (dbVoucher.customers) {
@@ -585,10 +705,8 @@ function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher, timel
         if (dbVoucher.agents) {
             text += `• Agen: ${dbVoucher.agents.name}\n`
         }
-    } else if (timeline.mikhmonData) {
-        if (timeline.mikhmonData.price) {
-            text += `\n🏷️ <b>Harga Mikhmon:</b> Rp ${parseInt(timeline.mikhmonData.price).toLocaleString('id-ID')}\n`
-        }
+    } else if (timeline.mikhmonData && timeline.mikhmonData.price) {
+        text += `\n🏷️ <b>Harga Paket:</b> Rp ${parseInt(timeline.mikhmonData.price).toLocaleString('id-ID')}\n`
     }
 
     text += `━━━━━━━━━━━━━━━━━━━━━`
@@ -643,7 +761,7 @@ COMMANDS['/start'] = COMMANDS['/help'] = async (chatId) => {
 Gunakan tombol menu di bawah atau ketik perintah langsung:
 
 <b>🔍 Pencarian & Manajemen Voucher:</b>
-• <b>/voucher &lt;kode&gt;</b> atau <b>/cari &lt;kode&gt;</b> - Info detail voucher & waktu kadaluarsa
+• <b>/voucher &lt;kode&gt;</b> atau <b>/cari &lt;kode&gt;</b> - Info detail voucher, device & waktu aktif
 • <b>/active</b> - User voucher yang sedang online
 • <b>/users</b> - Seluruh user voucher yang terdaftar
 • <b>/adduser &lt;nama&gt; &lt;pass&gt; [profile]</b> - Tambah user baru
@@ -1200,7 +1318,7 @@ function startSchedulers() {
 
 async function main() {
     console.log('=================================================')
-    console.log(' Starlink Manager Telegram Bot (Accurate Timeline)')
+    console.log(' Starlink Manager Telegram Bot (Device Info Active)')
     console.log('=================================================')
     console.log(`Bot Token: ...${CONFIG.BOT_TOKEN.slice(-8)}`)
     console.log(`Chat ID: ${CONFIG.CHAT_ID}`)

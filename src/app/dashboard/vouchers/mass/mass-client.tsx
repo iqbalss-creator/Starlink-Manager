@@ -1,0 +1,136 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createMassVouchers } from '../../customers/actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Loader2, Printer, Ticket } from 'lucide-react'
+
+export function MassClient({ packages, hotspotServers }: { packages: any[], hotspotServers?: any[] }) {
+  const [isPending, setIsPending] = useState(false)
+  const [error, setError] = useState('')
+  const router = useRouter()
+
+  async function onSubmit(formData: FormData) {
+    setIsPending(true)
+    setError('')
+    try {
+      const res = await createMassVouchers(formData)
+      if (res && res.error) {
+        setError(res.error)
+      } else if (res && res.success && res.generatedVouchers && res.generatedVouchers.length > 0) {
+        // Build query string for the print page
+        const q = new URLSearchParams()
+        q.set('users', res.generatedVouchers.join(','))
+        router.push('/dashboard/vouchers/print?' + q.toString())
+      } else {
+        setError('Tidak ada voucher yang berhasil digenerate.')
+      }
+    } catch (e: any) {
+      setError(e.message || String(e))
+    } finally {
+      setIsPending(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl mx-auto">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <Ticket className="w-8 h-8 text-primary" />
+          Cetak Voucher Masal
+        </h1>
+        <p className="text-slate-500 dark:text-slate-400 mt-1">Generate voucher fisik acak untuk dijual secara offline</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Parameter Cetak</CardTitle>
+          <CardDescription>Pilih paket dan jumlah voucher yang ingin dicetak</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={onSubmit} className="space-y-4">
+            {error && (
+              <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-lg">
+                {error}
+              </div>
+            )}
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quantity">Jumlah Voucher</Label>
+                <Input id="quantity" name="quantity" type="number" min="1" max="100" defaultValue="10" required />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="length">Panjang Kode (Karakter)</Label>
+                <Input id="length" name="length" type="number" min="4" max="10" defaultValue="5" required />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="prefix">Prefix Kode (Opsional)</Label>
+              <Input id="prefix" name="prefix" placeholder="Contoh: VC" />
+            </div>
+
+
+            <div className="space-y-2">
+              <Label htmlFor="package_id">Paket Layanan</Label>
+              <select
+                name="package_id"
+                required
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+              >
+                <option value="" disabled selected className="text-muted-foreground">Pilih paket</option>
+                {packages.map(pkg => (
+                  <option key={pkg.id} value={pkg.id} className="text-foreground bg-background">
+                    {pkg.name} - Rp {pkg.price.toLocaleString('id-ID')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="server">Server Hotspot (MikroTik)</Label>
+              {hotspotServers && hotspotServers.length > 0 ? (
+                <select
+                  id="server"
+                  name="server"
+                  required
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+                >
+                  {hotspotServers.map((s, idx) => (
+                    <option key={idx} value={s.name} className="text-foreground bg-background">
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input id="server" name="server" defaultValue="allstar" required placeholder="Nama Server (contoh: allstar)" />
+              )}
+            </div>
+
+            <div className="pt-4">
+              <Button type="submit" className="w-full bg-[#00A76F] hover:bg-[#007867] text-white" disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Memproses...
+                  </>
+                ) : (
+                  <>
+                    <Printer className="mr-2 h-4 w-4" />
+                    Generate & Buka Halaman Cetak
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

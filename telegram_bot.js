@@ -3,12 +3,13 @@
  *  STARLINK MANAGER - TELEGRAM BOT (Interactive Keyboard & Control)
  * ═══════════════════════════════════════════════════════════════════
  *  Fitur:
- *   1. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
- *   2. Remote Control MikroTik via Chat & Button
- *   3. Monitoring & Alert Otomatis (Server + MikroTik)
- *   4. Laporan Harian Otomatis (Jam 07:00 WIB)
- *   5. Last Backup Inspector & Instant Delivery
- *   6. Alert Keamanan (Login, Brute-force, Link down)
+ *   1. 🔍 Cari Voucher Lengkap (MikroTik Live + Supabase Database)
+ *   2. Interactive Buttons Keyboard (Tombol menu cepat di Telegram)
+ *   3. Remote Control MikroTik via Chat & Button
+ *   4. Monitoring & Alert Otomatis (Server + MikroTik)
+ *   5. Laporan Harian Otomatis (Jam 07:00 WIB)
+ *   6. Last Backup Inspector & Instant Delivery
+ *   7. Alert Keamanan (Login, Brute-force, Link down)
  * ═══════════════════════════════════════════════════════════════════
  */
 
@@ -35,21 +36,27 @@ function loadEnv() {
         MT_PORT: parseInt(cfg.MIKROTIK_PORT || '8728'),
         MT_USER: cfg.MIKROTIK_USER || 'admin',
         MT_PASS: cfg.MIKROTIK_PASS || '',
+        SUPABASE_URL: cfg.NEXT_PUBLIC_SUPABASE_URL || '',
+        SUPABASE_KEY: cfg.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
     }
 }
 
 const TELEGRAM_API = `https://api.telegram.org/bot${CONFIG.BOT_TOKEN}`
 let lastUpdateId = 0
 
+// State management for awaiting user input (e.g. waiting for voucher code)
+const userState = {}
+
 // ─── MENU KEYBOARD (TOMBOL TELEGRAM) ────────────────────────────────────────
 
 const MAIN_KEYBOARD = {
     keyboard: [
-        [{ text: '📊 Status' }, { text: '⚡ User Aktif' }],
-        [{ text: '👥 Semua User' }, { text: '📈 Bandwidth' }],
-        [{ text: '💾 Backup Sekarang' }, { text: '📦 Last Backup' }],
-        [{ text: '🏥 Health Check' }, { text: '📋 Laporan' }],
-        [{ text: '📜 Log MikroTik' }, { text: '❓ Bantuan' }]
+        [{ text: '🔍 Cari Voucher' }, { text: '⚡ User Aktif' }],
+        [{ text: '📊 Status Router' }, { text: '👥 Semua User' }],
+        [{ text: '📈 Bandwidth' }, { text: '💾 Backup Sekarang' }],
+        [{ text: '📦 Last Backup' }, { text: '🏥 Health Check' }],
+        [{ text: '📋 Laporan' }, { text: '📜 Log Router' }],
+        [{ text: '❓ Bantuan' }]
     ],
     resize_keyboard: true,
     persistent: true
@@ -226,6 +233,168 @@ function isAuthorized(chatId) {
     return String(chatId) === String(CONFIG.CHAT_ID)
 }
 
+// ─── VOUCHER SEARCH ENGINE (MIKROTIK + DATABASE) ────────────────────────────
+
+async function handleVoucherSearch(chatId, searchQuery) {
+    const q = searchQuery.trim()
+    if (!q) {
+        return sendMessage(chatId, 'Silakan masukkan kode voucher atau nama user yang ingin dicari.\nContoh: <code>/voucher user01</code> atau <code>/cari 1234</code>')
+    }
+
+    await sendMessage(chatId, `🔍 Sedang mencari voucher: <code>${q}</code> ...`, null)
+
+    try {
+        // 1. Ambil data dari MikroTik
+        const mtUsers = await mikrotikQuery('/ip/hotspot/user/print')
+        const mtActive = await mikrotikQuery('/ip/hotspot/active/print')
+
+        // Cari yang cocok di MikroTik
+        const matchedMt = mtUsers.filter(u => 
+            (u.name && u.name.toLowerCase().includes(q.toLowerCase())) ||
+            (u.comment && u.comment.toLowerCase().includes(q.toLowerCase()))
+        )
+
+        // 2. Ambil data dari Database Supabase
+        let dbVoucher = null
+        let dbCustomer = null
+        if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY) {
+            try {
+                const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/vouchers?mikrotik_username=ilike.*${encodeURIComponent(q)}*&select=*,packages(name,price),agents(name),customers(name,whatsapp_number)`, {
+                    headers: {
+                        'apikey': CONFIG.SUPABASE_KEY,
+                        'Authorization': `Bearer ${CONFIG.SUPABASE_KEY}`
+                    }
+                })
+                if (res.ok) {
+                    const data = await res.json()
+                    if (data && data.length > 0) dbVoucher = data[0]
+                }
+            } catch (e) {}
+        }
+
+        // Jika tidak ditemukan di manapun
+        if (matchedMt.length === 0 && !dbVoucher) {
+            return sendMessage(chatId, `❌ Voucher dengan kode <code>${q}</code> <b>tidak ditemukan</b> di MikroTik maupun Database.`, MAIN_KEYBOARD)
+        }
+
+        // Jika ditemukan 1 atau cocok persis
+        if (matchedMt.length === 1 || (matchedMt.length > 1 && matchedMt.some(u => u.name.toLowerCase() === q.toLowerCase()))) {
+            const u = matchedMt.find(item => item.name.toLowerCase() === q.toLowerCase()) || matchedMt[0]
+            const activeSession = mtActive.find(a => a.user === u.name)
+
+            return renderVoucherDetailCard(chatId, u, activeSession, dbVoucher)
+        }
+
+        // Jika ditemukan banyak kecocokan (lebih dari 1)
+        if (matchedMt.length > 1) {
+            let text = `🔍 Ditemukan <b>${matchedMt.length}</b> voucher yang cocok dengan "<code>${q}</code>":\n\n`
+            const inlineButtons = []
+
+            matchedMt.slice(0, 8).forEach((u, idx) => {
+                const isOnline = mtActive.some(a => a.user === u.name)
+                const statusIcon = isOnline ? '🟢' : (u.disabled === 'true' ? '🔴' : '⚪')
+                text += `${idx + 1}. ${statusIcon} <b>${u.name}</b> (Paket: ${u.profile || 'default'})\n`
+                inlineButtons.push([{ text: `🔎 Detail ${u.name}`, callback_data: `vc_detail_${u.name}` }])
+            })
+
+            if (matchedMt.length > 8) text += `\n<i>... dan ${matchedMt.length - 8} voucher lainnya.</i>`
+
+            return sendMessage(chatId, text, { inline_keyboard: inlineButtons })
+        }
+
+        // Jika hanya ada di Database
+        if (dbVoucher && matchedMt.length === 0) {
+            return renderDbOnlyVoucherCard(chatId, dbVoucher)
+        }
+
+    } catch (e) {
+        await sendMessage(chatId, `❌ Error saat mencari voucher: ${e.message}`, MAIN_KEYBOARD)
+    }
+}
+
+function renderVoucherDetailCard(chatId, mtUser, activeSession, dbVoucher) {
+    const isOnline = !!activeSession
+    const isDisabled = mtUser.disabled === 'true'
+    const statusText = isDisabled ? '🔴 Nonaktif (Disabled)' : '🟢 Aktif (Enabled)'
+    const onlineText = isOnline ? `🟢 <b>ONLINE SEKARANG</b>\n   • IP Address: <code>${activeSession.address || '-'}</code>\n   • MAC Address: <code>${activeSession['mac-address'] || '-'}</code>\n   • Sesi Aktif: ${formatUptime(activeSession.uptime)}` : '⚪ <b>OFFLINE / Tidak Terhubung</b>'
+
+    const txBytes = formatBytes(mtUser['bytes-in'] || 0)
+    const rxBytes = formatBytes(mtUser['bytes-out'] || 0)
+    const totalUsage = formatBytes((parseInt(mtUser['bytes-in'] || 0) + parseInt(mtUser['bytes-out'] || 0)))
+    const uptimeUsed = formatUptime(mtUser.uptime)
+    const limitUptime = mtUser['limit-uptime'] ? mtUser['limit-uptime'] : 'Unlimited'
+    const limitBytes = mtUser['limit-bytes-total'] ? formatBytes(mtUser['limit-bytes-total']) : 'Unlimited'
+
+    let text = `🎟️ <b>INFORMASI LENGKAP VOUCHER</b>\n`
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`
+    text += `👤 <b>Username:</b> <code>${mtUser.name}</code>\n`
+    text += `🔑 <b>Password:</b> <code>${mtUser.password || mtUser.name}</code>\n`
+    text += `📦 <b>Paket / Profile:</b> <b>${mtUser.profile || 'default'}</b>\n`
+    text += `⚡ <b>Status Akun:</b> ${statusText}\n`
+    text += `🌐 <b>Status Koneksi:</b> ${onlineText}\n\n`
+
+    text += `📊 <b>Penggunaan & Kuota:</b>\n`
+    text += `• Waktu Terpakai: <b>${uptimeUsed}</b> / ${limitUptime}\n`
+    text += `• Total Data: <b>${totalUsage}</b> (⬇️ ${rxBytes} | ⬆️ ${txBytes})\n`
+    text += `• Batas Kuota: <b>${limitBytes}</b>\n`
+    if (mtUser.comment) text += `• Catatan: <i>${mtUser.comment}</i>\n`
+
+    // Info dari Database jika ada
+    if (dbVoucher) {
+        text += `\n💾 <b>Data Billing & Pelanggan:</b>\n`
+        if (dbVoucher.customers) {
+            text += `• Pelanggan: <b>${dbVoucher.customers.name || '-'}</b>\n`
+            text += `• WhatsApp: <code>${dbVoucher.customers.whatsapp_number || '-'}</code>\n`
+        }
+        if (dbVoucher.packages) {
+            text += `• Harga Paket: Rp ${(dbVoucher.packages.price || 0).toLocaleString('id-ID')}\n`
+        }
+        text += `• Status Pembayaran: <b>${dbVoucher.payment_status || 'Belum Lunas'}</b>\n`
+        if (dbVoucher.expiry_date) {
+            text += `• Tanggal Kadaluarsa: <b>${new Date(dbVoucher.expiry_date).toLocaleDateString('id-ID')}</b>\n`
+        }
+        if (dbVoucher.agents) {
+            text += `• Agen: ${dbVoucher.agents.name}\n`
+        }
+    }
+
+    text += `━━━━━━━━━━━━━━━━━━━━━`
+
+    const inlineBtns = [
+        [
+            { text: isDisabled ? '🟢 Aktifkan' : '🔴 Nonaktifkan', callback_data: `vc_toggle_${mtUser.name}_${isDisabled ? 'enable' : 'disable'}` },
+            isOnline ? { text: '⚡ Kick User', callback_data: `vc_kick_${mtUser.name}` } : { text: '🔄 Refresh', callback_data: `vc_detail_${mtUser.name}` }
+        ],
+        [
+            { text: '🗑️ Hapus Voucher', callback_data: `vc_del_${mtUser.name}` },
+            { text: '🔍 Cari Voucher Lain', callback_data: 'cmd_prompt_search' }
+        ]
+    ]
+
+    return sendMessage(chatId, text, { inline_keyboard: inlineBtns })
+}
+
+function renderDbOnlyVoucherCard(chatId, dbVoucher) {
+    let text = `🎟️ <b>INFORMASI VOUCHER (HANYA DATABASE)</b>\n`
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`
+    text += `👤 <b>Kode:</b> <code>${dbVoucher.mikrotik_username}</code>\n`
+    text += `⚠️ <i>Catatan: Voucher ini belum terdaftar di MikroTik live router.</i>\n\n`
+    if (dbVoucher.customers) {
+        text += `• Pelanggan: <b>${dbVoucher.customers.name || '-'}</b>\n`
+        text += `• WhatsApp: <code>${dbVoucher.customers.whatsapp_number || '-'}</code>\n`
+    }
+    if (dbVoucher.packages) {
+        text += `• Paket: <b>${dbVoucher.packages.name}</b> (Rp ${(dbVoucher.packages.price || 0).toLocaleString('id-ID')})\n`
+    }
+    text += `• Status Pembayaran: <b>${dbVoucher.payment_status || 'Belum Lunas'}</b>\n`
+    if (dbVoucher.expiry_date) {
+        text += `• Tanggal Kadaluarsa: <b>${new Date(dbVoucher.expiry_date).toLocaleDateString('id-ID')}</b>\n`
+    }
+    text += `━━━━━━━━━━━━━━━━━━━━━`
+
+    return sendMessage(chatId, text, MAIN_KEYBOARD)
+}
+
 // ─── COMMAND HANDLERS ───────────────────────────────────────────────────────
 
 const COMMANDS = {}
@@ -235,29 +404,35 @@ COMMANDS['/start'] = COMMANDS['/help'] = async (chatId) => {
 
 Gunakan tombol menu di bawah atau ketik perintah langsung:
 
+<b>🔍 Pencarian & Manajemen Voucher:</b>
+• <b>/voucher &lt;kode&gt;</b> atau <b>/cari &lt;kode&gt;</b> - Cari info detail voucher
+• <b>/active</b> - User voucher yang sedang online
+• <b>/users</b> - Seluruh user voucher yang terdaftar
+• <b>/adduser &lt;nama&gt; &lt;pass&gt; [profile]</b> - Tambah user baru
+• <b>/deluser &lt;nama&gt;</b> - Hapus voucher
+• <b>/kick &lt;nama&gt;</b> - Putus koneksi user
+
 <b>📊 Monitoring & Status:</b>
-• /status - Info CPU, RAM, Uptime & Router
-• /active - User hotspot yang sedang online
-• /users - Seluruh daftar user hotspot
-• /bandwidth - Monitor traffic interface
-• /health - Cek kesehatan server & MikroTik
-• /report - Laporan ringkasan sistem
+• <b>/status</b> - Info CPU, RAM, Uptime & Router
+• <b>/bandwidth</b> - Monitor traffic interface real-time
+• <b>/health</b> - Cek kesehatan server & MikroTik
+• <b>/report</b> - Laporan ringkasan sistem
+• <b>/log</b> - Log sistem MikroTik
 
 <b>💾 Backup & Recovery:</b>
-• /backup - Buat backup baru sekarang
-• /lastbackup - Info & download backup terakhir
-
-<b>⚙️ Konfigurasi & Remote:</b>
-• /adduser &lt;nama&gt; &lt;pass&gt; [profile] - Tambah user
-• /deluser &lt;nama&gt; - Hapus user
-• /kick &lt;nama&gt; - Putus koneksi user aktif
-• /interfaces - Daftar status interface
-• /ip - Daftar IP Address
-• /dhcp - Daftar DHCP Leases
-• /log - Log sistem MikroTik
-• /ping &lt;host&gt; - Ping dari router
-• /reboot - Restart router MikroTik`
+• <b>/backup</b> - Buat backup baru sekarang
+• <b>/lastbackup</b> - Info & download backup terakhir`
     await sendMessage(chatId, text, MAIN_KEYBOARD)
+}
+
+COMMANDS['/voucher'] = COMMANDS['/cari'] = COMMANDS['/search'] = async (chatId, args) => {
+    if (args.length === 0) {
+        userState[chatId] = 'awaiting_voucher_search'
+        return sendMessage(chatId, `🔍 <b>Ketik Kode Voucher atau Nama User yang ingin dicari:</b>\n<i>(Contoh: 1234 atau user01)</i>`, {
+            force_reply: true
+        })
+    }
+    await handleVoucherSearch(chatId, args.join(' '))
 }
 
 COMMANDS['/status'] = async (chatId) => {
@@ -287,7 +462,7 @@ COMMANDS['/status'] = async (chatId) => {
         const inlineBtn = {
             inline_keyboard: [
                 [{ text: '⚡ User Aktif', callback_data: 'cmd_active' }, { text: '📈 Bandwidth', callback_data: 'cmd_bandwidth' }],
-                [{ text: '💾 Backup Sekarang', callback_data: 'cmd_backup' }]
+                [{ text: '🔍 Cari Voucher', callback_data: 'cmd_prompt_search' }, { text: '💾 Backup', callback_data: 'cmd_backup' }]
             ]
         }
         await sendMessage(chatId, text, inlineBtn)
@@ -367,43 +542,6 @@ COMMANDS['/bandwidth'] = async (chatId) => {
     } catch (e) { await sendMessage(chatId, `Error: ${e.message}`) }
 }
 
-COMMANDS['/interfaces'] = async (chatId) => {
-    try {
-        const data = await mikrotikQuery('/interface/print')
-        let text = `<b>Daftar Interface MikroTik (${data.length})</b>\n\n`
-        data.forEach((i, idx) => {
-            const status = i.running === 'true' ? '🟢 RUNNING' : '⚪ DOWN'
-            text += `${idx + 1}. <b>${i.name}</b> | ${i.type || '-'} | ${status}\n`
-        })
-        await sendMessage(chatId, text)
-    } catch (e) { await sendMessage(chatId, `Error: ${e.message}`) }
-}
-
-COMMANDS['/ip'] = async (chatId) => {
-    try {
-        const data = await mikrotikQuery('/ip/address/print')
-        let text = `<b>Daftar IP Address (${data.length})</b>\n\n`
-        data.forEach((ip, i) => {
-            text += `${i + 1}. <b>${ip.address}</b>\n   Interface: ${ip.interface || '-'} | Network: ${ip.network || '-'}\n`
-        })
-        await sendMessage(chatId, text)
-    } catch (e) { await sendMessage(chatId, `Error: ${e.message}`) }
-}
-
-COMMANDS['/dhcp'] = async (chatId) => {
-    try {
-        const data = await mikrotikQuery('/ip/dhcp-server/lease/print')
-        if (data.length === 0) return sendMessage(chatId, 'Tidak ada DHCP leases.')
-        let text = `<b>Daftar DHCP Leases (${data.length})</b>\n\n`
-        data.slice(0, 25).forEach((l, i) => {
-            const status = l.status || (l.dynamic === 'true' ? 'dynamic' : 'static')
-            text += `${i + 1}. <b>${l['host-name'] || l['mac-address'] || '-'}</b>\n   IP: ${l.address || '-'} | Status: ${status}\n`
-        })
-        if (data.length > 25) text += `\n... dan ${data.length - 25} lease lainnya.`
-        await sendMessage(chatId, text)
-    } catch (e) { await sendMessage(chatId, `Error: ${e.message}`) }
-}
-
 COMMANDS['/log'] = async (chatId) => {
     try {
         const data = await mikrotikQuery('/log/print')
@@ -412,20 +550,6 @@ COMMANDS['/log'] = async (chatId) => {
         let text = `<b>Log Terbaru MikroTik (${recent.length})</b>\n\n`
         recent.forEach(l => {
             text += `[${l.time || ''}] ${l.topics || ''}: ${l.message || ''}\n`
-        })
-        await sendMessage(chatId, text)
-    } catch (e) { await sendMessage(chatId, `Error: ${e.message}`) }
-}
-
-COMMANDS['/ping'] = async (chatId, args) => {
-    const target = args[0] || '8.8.8.8'
-    try {
-        const data = await mikrotikQuery('/ping', [`=address=${target}`, '=count=4'])
-        if (data.length === 0) return sendMessage(chatId, `Ping ke ${target}: Tidak ada respon.`)
-        let text = `<b>Hasil Ping ke ${target}</b>\n\n`
-        data.forEach((p, i) => {
-            if (p.time) text += `${i + 1}. ${p.time} ms (TTL: ${p.ttl || '-'})\n`
-            else text += `${i + 1}. Request Timeout\n`
         })
         await sendMessage(chatId, text)
     } catch (e) { await sendMessage(chatId, `Error: ${e.message}`) }
@@ -512,14 +636,6 @@ COMMANDS['/lastbackup'] = async (chatId) => {
     }
 }
 
-COMMANDS['/reboot'] = async (chatId) => {
-    await sendMessage(chatId, '⚠️ Mengirim perintah REBOOT ke MikroTik...\nRouter akan offline beberapa saat.')
-    try {
-        await mikrotikQuery('/system/reboot')
-    } catch (e) { /* reboot causes socket close */ }
-    await sendMessage(chatId, 'Perintah reboot telah terkirim. MikroTik sedang restart...')
-}
-
 COMMANDS['/health'] = async (chatId) => {
     await checkHealth(chatId, true)
 }
@@ -539,7 +655,6 @@ async function checkHealth(chatId = null, manual = false) {
     let serverOk = true
     let alertMessages = []
 
-    // Check MikroTik
     try {
         const res = await mikrotikQuery('/system/resource/print')
         if (res.length > 0) {
@@ -558,7 +673,6 @@ async function checkHealth(chatId = null, manual = false) {
         alertMessages.push(`MikroTik OFFLINE: ${e.message}`)
     }
 
-    // Check Server (Web App)
     try {
         const res = await fetch('http://127.0.0.1:3000/api/mikrotik?action=config')
         if (!res.ok) serverOk = false
@@ -567,7 +681,6 @@ async function checkHealth(chatId = null, manual = false) {
         alertMessages.push('Web Server (Next.js) OFFLINE!')
     }
 
-    // Send alert if status changed or manual check
     if (manual) {
         let text = `<b>Laporan Health Check Sistem</b> 🏥\n\n`
         text += `🔹 <b>MikroTik Router:</b> ${mikrotikOk ? '🟢 ONLINE' : '🔴 OFFLINE'}\n`
@@ -680,6 +793,59 @@ async function processCallbackQuery(cq) {
     if (data === 'cmd_backup') return COMMANDS['/backup'](chatId)
     if (data === 'cmd_health') return COMMANDS['/health'](chatId)
 
+    if (data === 'cmd_prompt_search') {
+        userState[chatId] = 'awaiting_voucher_search'
+        return sendMessage(chatId, `🔍 <b>Ketik Kode Voucher atau Nama User yang ingin dicari:</b>\n<i>(Contoh: 1234 atau user01)</i>`, {
+            force_reply: true
+        })
+    }
+
+    if (data.startsWith('vc_detail_')) {
+        const username = data.replace('vc_detail_', '')
+        return handleVoucherSearch(chatId, username)
+    }
+
+    if (data.startsWith('vc_kick_')) {
+        const username = data.replace('vc_kick_', '')
+        try {
+            const active = await mikrotikQuery('/ip/hotspot/active/print')
+            const target = active.find(u => u.user === username)
+            if (target) {
+                await mikrotikQuery('/ip/hotspot/active/remove', [`=numbers=${target['.id']}`])
+                await sendMessage(chatId, `✅ User <b>${username}</b> berhasil di-kick!`)
+            } else {
+                await sendMessage(chatId, `User <b>${username}</b> sudah tidak online.`)
+            }
+        } catch (e) {
+            await sendMessage(chatId, `Gagal kick: ${e.message}`)
+        }
+        return handleVoucherSearch(chatId, username)
+    }
+
+    if (data.startsWith('vc_toggle_')) {
+        const parts = data.split('_')
+        const username = parts[2]
+        const action = parts[3] // 'enable' or 'disable'
+        try {
+            const cmd = action === 'enable' ? '/ip/hotspot/user/enable' : '/ip/hotspot/user/disable'
+            await mikrotikQuery(cmd, [`=numbers=${username}`])
+            await sendMessage(chatId, `✅ Status voucher <b>${username}</b> diubah ke: <b>${action.toUpperCase()}</b>`)
+        } catch (e) {
+            await sendMessage(chatId, `Gagal update voucher: ${e.message}`)
+        }
+        return handleVoucherSearch(chatId, username)
+    }
+
+    if (data.startsWith('vc_del_')) {
+        const username = data.replace('vc_del_', '')
+        try {
+            await mikrotikQuery('/ip/hotspot/user/remove', [`=numbers=${username}`])
+            await sendMessage(chatId, `✅ Voucher <b>${username}</b> berhasil dihapus permanen dari MikroTik!`, MAIN_KEYBOARD)
+        } catch (e) {
+            await sendMessage(chatId, `Gagal hapus: ${e.message}`, MAIN_KEYBOARD)
+        }
+    }
+
     if (data === 'send_last_zip') {
         const p = 'C:\\Backups\\StarlinkManager\\latest_backup.zip'
         if (fs.existsSync(p)) {
@@ -723,12 +889,24 @@ async function processMessage(msg) {
         return sendMessage(chatId, 'Akses Ditolak. Bot ini hanya dapat diakses oleh Admin.', null)
     }
 
+    // Check if user is in an active state (e.g. typing voucher search query)
+    if (userState[chatId] === 'awaiting_voucher_search' && !text.startsWith('/')) {
+        delete userState[chatId]
+        return handleVoucherSearch(chatId, text)
+    }
+
     // Map Keyboard button text to commands
     const textLower = text.toLowerCase()
     let commandToRun = text
     let args = []
 
-    if (textLower.includes('status')) commandToRun = '/status'
+    if (textLower.includes('cari voucher') || textLower === '🔍 cari voucher') {
+        userState[chatId] = 'awaiting_voucher_search'
+        return sendMessage(chatId, `🔍 <b>Ketik Kode Voucher atau Nama User yang ingin dicari:</b>\n<i>(Contoh: 1234 atau user01)</i>`, {
+            force_reply: true
+        })
+    }
+    else if (textLower.includes('status router') || textLower === '📊 status router' || textLower === '📊 status') commandToRun = '/status'
     else if (textLower.includes('user aktif') || textLower === '⚡ user aktif') commandToRun = '/active'
     else if (textLower.includes('semua user') || textLower === '👥 semua user') commandToRun = '/users'
     else if (textLower.includes('bandwidth') || textLower === '📈 bandwidth') commandToRun = '/bandwidth'
@@ -736,7 +914,7 @@ async function processMessage(msg) {
     else if (textLower.includes('last backup') || textLower === '📦 last backup') commandToRun = '/lastbackup'
     else if (textLower.includes('health check') || textLower === '🏥 health check') commandToRun = '/health'
     else if (textLower.includes('laporan') || textLower === '📋 laporan') commandToRun = '/report'
-    else if (textLower.includes('log mikrotik') || textLower === '📜 log mikrotik') commandToRun = '/log'
+    else if (textLower.includes('log router') || textLower === '📜 log router' || textLower.includes('log mikrotik')) commandToRun = '/log'
     else if (textLower.includes('bantuan') || textLower === '❓ bantuan') commandToRun = '/help'
     else if (text.startsWith('/')) {
         const parts = text.split(/\s+/)
@@ -788,7 +966,7 @@ function startSchedulers() {
 
 async function main() {
     console.log('=================================================')
-    console.log(' Starlink Manager Telegram Bot (Keyboard Active)')
+    console.log(' Starlink Manager Telegram Bot (Voucher Search Active)')
     console.log('=================================================')
     console.log(`Bot Token: ...${CONFIG.BOT_TOKEN.slice(-8)}`)
     console.log(`Chat ID: ${CONFIG.CHAT_ID}`)
@@ -796,7 +974,7 @@ async function main() {
     console.log('')
 
     // Send startup notification with interactive keyboard
-    await sendMessage(CONFIG.CHAT_ID, `<b>Starlink Manager Bot v2.0 Siap Digunakan!</b> 🚀\n\nTombol menu cepat telah diaktifkan di bawah chat Anda.\nKetik /help atau tekan tombol apa saja untuk mulai.`, MAIN_KEYBOARD)
+    await sendMessage(CONFIG.CHAT_ID, `<b>Starlink Manager Bot v2.1 Siap!</b> 🚀\n\nFitur <b>🔍 Cari Voucher Lengkap</b> telah aktif.\nTekan tombol <b>🔍 Cari Voucher</b> di bawah atau ketik <code>/voucher &lt;kode&gt;</code> untuk mencari voucher.`, MAIN_KEYBOARD)
 
     try {
         const logs = await mikrotikQuery('/log/print')

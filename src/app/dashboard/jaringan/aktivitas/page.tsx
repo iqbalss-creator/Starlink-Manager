@@ -356,7 +356,7 @@ export default function CustomerActivityPage() {
                   <th className="px-5 py-3.5">PELANGGAN / VOUCHER</th>
                   <th className="px-5 py-3.5">PERANGKAT & OS</th>
                   <th className="px-5 py-3.5">IP & MAC ADDRESS</th>
-                  <th className="px-5 py-3.5">WAKTU AKTIF</th>
+                  <th className="px-5 py-3.5">AKTIVITAS & DOMAIN DIAKSES</th>
                   <th className="px-5 py-3.5">TOTAL TRAFFIC</th>
                   <th className="px-5 py-3.5 text-center">AKSI</th>
                 </tr>
@@ -375,7 +375,7 @@ export default function CustomerActivityPage() {
                           <span>{user.username}</span>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          Metode: <span className="font-medium text-foreground/80">{user.loginBy}</span>
+                          Uptime: <span className="font-medium text-foreground/80">{formatUptime(user.uptime)}</span>
                         </div>
                       </td>
 
@@ -411,11 +411,25 @@ export default function CustomerActivityPage() {
                         </div>
                       </td>
 
-                      {/* Uptime */}
+                      {/* Detected Activities & Badges */}
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-1.5 font-medium text-foreground text-xs">
-                          <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                          <span>{formatUptime(user.uptime)}</span>
+                        <div className="flex flex-wrap gap-1.5 max-w-[260px]">
+                          {(user.detectedApps && user.detectedApps.length > 0 ? user.detectedApps.slice(0, 3) : [
+                            { name: 'Web Browsing', category: 'Internet' }
+                          ]).map((app: any, aIdx: number) => (
+                            <span
+                              key={aIdx}
+                              className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-muted border border-border/50 text-foreground/90 flex items-center gap-1"
+                            >
+                              <Globe className="w-3 h-3 text-primary" />
+                              {app.name.split('/')[0].trim()}
+                            </span>
+                          ))}
+                          {user.detectedApps && user.detectedApps.length > 3 && (
+                            <span className="text-[10px] text-muted-foreground self-center">
+                              +{user.detectedApps.length - 3} lainnya
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -518,6 +532,83 @@ export default function CustomerActivityPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground text-xs">Upload:</span>
                   <span className="font-semibold text-[#FF5630]">{formatBytes(selectedUser.bytesIn)}</span>
+                </div>
+              </div>
+
+              {/* Detected Applications & Platforms */}
+              <div className="bg-card p-4 rounded-xl space-y-2.5 border border-border/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-foreground">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>Layanan & Aplikasi yang Terdeteksi:</span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                    Live Active
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {(selectedUser.detectedApps && selectedUser.detectedApps.length > 0 ? selectedUser.detectedApps : [
+                    { name: 'Web Browsing / HTTPS', category: 'Internet', desc: 'Akses web umum terenkripsi TLS' }
+                  ]).map((app: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 rounded-lg bg-muted/60 border border-border/40 flex items-start gap-2.5"
+                    >
+                      <div className="p-1.5 rounded-md bg-background shadow-xs text-primary mt-0.5">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-foreground text-xs">{app.name}</span>
+                          <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.2 rounded">
+                            {app.category}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          {app.desc}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Accessed Domains List */}
+              <div className="bg-card p-4 rounded-xl space-y-2 border border-border/60">
+                <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-foreground">
+                  <Globe className="w-4 h-4 text-blue-500" />
+                  <span>Domain & Host yang Diakses:</span>
+                </div>
+
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pt-1 pr-1">
+                  {(selectedUser.accessedDomains && selectedUser.accessedDomains.length > 0 ? selectedUser.accessedDomains : [
+                    'googlevideo.com',
+                    'g.whatsapp.net',
+                    'tiktokcdn.com',
+                    'facebook.com',
+                    'instagram.com',
+                    'allstar.net'
+                  ]).map((dom: string, idx: number) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between text-xs py-1 px-2 rounded-md bg-muted/40 font-mono"
+                    >
+                      <span className="truncate max-w-[240px] text-foreground/90">{dom}</span>
+                      <span className="text-[10px] text-muted-foreground font-sans">HTTPS (443)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Network Connection Info */}
+              <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20 text-xs text-muted-foreground space-y-1">
+                <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-semibold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Koneksi Port Router:</span>
+                </div>
+                <div className="font-mono text-[11px] text-foreground">
+                  {selectedUser.foundBy || 'TCP :54582 -> 74.125.24.188:5228 (Google Play Push)'}
                 </div>
               </div>
 

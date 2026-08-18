@@ -92,10 +92,60 @@ export async function GET(request: Request) {
         // Check Randomized MAC
         const isRandomMac = mac && ['2', '6', 'A', 'E'].includes(mac[1]?.toUpperCase())
 
+        // Detect applications & domains accessed
+        const detectedApps: { name: string; category: string; color: string; desc: string }[] = []
+        const userDomains: string[] = []
+
+        recentDomains.forEach((domain: string) => {
+          const d = domain.toLowerCase()
+          if (d.includes('youtube') || d.includes('googlevideo') || d.includes('ytimg') || d.includes('netflix') || d.includes('vidio.com')) {
+            if (!detectedApps.some(a => a.name === 'YouTube / Video Streaming')) {
+              detectedApps.push({ name: 'YouTube / Video Streaming', category: 'Streaming Video', color: 'red', desc: 'Streaming video HD & musik' })
+            }
+            userDomains.push(domain)
+          } else if (d.includes('tiktok') || d.includes('byteoversea') || d.includes('ibytedtos') || d.includes('tiktokcdn')) {
+            if (!detectedApps.some(a => a.name === 'TikTok')) {
+              detectedApps.push({ name: 'TikTok', category: 'Media Sosial', color: 'cyan', desc: 'Video feed & live streaming' })
+            }
+            userDomains.push(domain)
+          } else if (d.includes('whatsapp') || d.includes('wa.me')) {
+            if (!detectedApps.some(a => a.name === 'WhatsApp Messenger')) {
+              detectedApps.push({ name: 'WhatsApp Messenger', category: 'Komunikasi', color: 'emerald', desc: 'Chatting, media & voice call' })
+            }
+            userDomains.push(domain)
+          } else if (d.includes('instagram') || d.includes('facebook') || d.includes('fbcdn') || d.includes('cdninstagram')) {
+            if (!detectedApps.some(a => a.name === 'Instagram & Facebook')) {
+              detectedApps.push({ name: 'Instagram & Facebook', category: 'Media Sosial', color: 'pink', desc: 'Feed, reels & social media' })
+            }
+            userDomains.push(domain)
+          } else if (d.includes('mobilelegends') || d.includes('garena') || d.includes('freefire') || d.includes('pubg') || d.includes('roblox') || d.includes('riotgames') || d.includes('steam')) {
+            if (!detectedApps.some(a => a.name === 'Game Online')) {
+              detectedApps.push({ name: 'Game Online', category: 'Gaming', color: 'amber', desc: 'Koneksi server game multiplayer' })
+            }
+            userDomains.push(domain)
+          } else if (d.includes('shopee') || d.includes('tokopedia') || d.includes('lazada') || d.includes('blibli')) {
+            if (!detectedApps.some(a => a.name === 'Marketplace / Belanja')) {
+              detectedApps.push({ name: 'Marketplace / Belanja', category: 'E-Commerce', color: 'orange', desc: 'Aplikasi belanja online' })
+            }
+            userDomains.push(domain)
+          } else if (d.includes('google') || d.includes('android') || d.includes('googleapis') || d.includes('gstatic')) {
+            if (!detectedApps.some(a => a.name === 'Layanan Google & Android')) {
+              detectedApps.push({ name: 'Layanan Google & Android', category: 'Sistem / Cloud', color: 'blue', desc: 'Sinkronisasi akun, push notification & browsing' })
+            }
+            userDomains.push(domain)
+          }
+        })
+
+        // Default app if none matched
+        if (detectedApps.length === 0) {
+          detectedApps.push({ name: 'Web Browsing / HTTPS', category: 'Internet', color: 'slate', desc: 'Akses web umum terenkripsi TLS' })
+        }
+
         return {
           id: u['.id'],
           username: u.user,
           ip: u.address,
+          dhcpIp: lease?.address || lease?.['active-address'] || u.address,
           mac: u['mac-address'],
           isRandomMac,
           uptime: u.uptime,
@@ -108,6 +158,9 @@ export async function GET(request: Request) {
           dhcpStatus: lease?.status || 'bound',
           server: u.server || 'hotspot',
           comment: u.comment || '',
+          foundBy: host?.['found-by'] || 'Port 443 (HTTPS Web)',
+          detectedApps,
+          accessedDomains: userDomains.slice(0, 15),
         }
       })
 

@@ -335,10 +335,6 @@ export function CustomerList({
       else if(price == 150000) color = "#FF6F00"
       else if(price == 1500000) color = "#0D47A1"
 
-      const validityStr = `MASA AKTIF : ${duration} HARI`
-      const timeLimitStr = `DURASI : ${duration} HARI`
-      const dataLimitStr = `UNLIMITED`
-      
       const formatPrice = `Rp ${price.toLocaleString('id-ID')}`
       const priceParts = formatPrice.split(" ")
 
@@ -379,18 +375,19 @@ export function CustomerList({
         <div style="padding:2px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:10px;">
         VOUCHER
         </div>
-        <div style="padding:2px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:14px;color:#000;">
+        <div style="padding:2px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:14px;color:#000;font-family:monospace;">
         ${username}
         </div>
-        <div style="text-align:center;color:#111;font-size:8px;font-weight:bold;padding:3px;">
-        Wi-Fi ALLSTAR
+        <div style="text-align:center;color:#111;font-size:7px;font-weight:bold;padding:2px;">
+        ALLSTAR INTERNET
         </div>
         </td>
         <td style="width:100px;text-align:right;vertical-align:middle;padding-right:5px;padding-left:2px;">
           <table style="width:100%; border:none; border-collapse:collapse;">
             <tr>
-              <td style="text-align:right; font-size:7px; font-weight:bold; color:#000; line-height:1.2; padding:0; padding-right:4px;">
-                ${validityStr}<br>${timeLimitStr}<br>${dataLimitStr}
+              <td style="text-align:right; font-size:8px; font-weight:bold; color:#000; line-height:1.3; padding:0; padding-right:4px;">
+                <span style="color:#007867;">KUOTA: UNLIMITED</span><br>
+                <span style="color:#666; font-size:7px;">Login: allstar.net</span>
               </td>
             </tr>
           </table>
@@ -398,11 +395,8 @@ export function CustomerList({
         </tr>
         <tr>
         <td colspan="2" style="background:${color};padding:0;">
-        <div style="color:#fff;font-size:9px;font-weight:bold;padding:2.5px;">
-        <span style="float:left;padding-left:3px;">
-        CS : ${cust.whatsapp_number}
-        </span>
-        <div style="clear:both;"></div>
+        <div style="color:#fff;font-size:9px;font-weight:bold;padding:2.5px;text-align:center;">
+        Wi-Fi ALLSTAR
         </div>
         </td>
         </tr>

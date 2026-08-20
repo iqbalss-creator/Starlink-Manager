@@ -5,7 +5,7 @@ import React, { useState } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Store, Phone, CheckCircle, Printer, MessageCircle, ArrowLeft, Ticket, Trash2, Eye, X, RefreshCw } from "lucide-react"
+import { Store, Phone, CheckCircle, Printer, MessageCircle, ArrowLeft, Ticket, Trash2, Eye, X, RefreshCw, Palette, Settings2, Layout, Check, Sparkles } from "lucide-react"
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -18,6 +18,44 @@ import {
 
 import { generateAgentVouchers, getAgentSettlements, deleteVoucherCloter, settleAgentVouchers, syncCloterVouchers, settlePartialVouchers } from '../actions'
 import { toast } from 'sonner'
+
+export const VOUCHER_TEMPLATES = [
+  {
+    id: 'mikhmon',
+    name: 'Mikhmon Classic (Clean)',
+    badge: 'Populer',
+    description: 'Warna-warni sesuai harga, logo Allstar, nomor urut, & banner bawah',
+    previewBg: 'bg-pink-500/10 border-pink-500/30 text-pink-700 dark:text-pink-400'
+  },
+  {
+    id: 'minimalist',
+    name: 'Modern Minimalist',
+    badge: 'Rekomendasi',
+    description: 'Desain modern rounded putih bersih, border hijau tegas, badge harga elegan',
+    previewBg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
+  },
+  {
+    id: 'thermal',
+    name: 'Struk Kasir Thermal (58mm/80mm)',
+    badge: 'Hemat Tinta',
+    description: 'Format monokrom hitam putih untuk printer struk thermal bluetooth/USB',
+    previewBg: 'bg-slate-500/10 border-slate-500/30 text-slate-700 dark:text-slate-400'
+  },
+  {
+    id: 'compact',
+    name: 'Compact Grid A4',
+    badge: 'Hemat Kertas',
+    description: 'Desain ringkas untuk cetak massal, muat 30+ voucher per lembar kertas A4',
+    previewBg: 'bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-400'
+  },
+  {
+    id: 'dark',
+    name: 'Dark Cyber Edition',
+    badge: 'Modern Dark',
+    description: 'Tema gelap futuristik kontras tinggi dengan aksen cyan & text tebal',
+    previewBg: 'bg-slate-900 border-sky-500/40 text-sky-400'
+  }
+]
 
 export default function AgentDetailClient({ agent, unsettledVouchers, settlements, packages, allVouchers }: any) {
   const router = useRouter()
@@ -32,6 +70,41 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
   const [appendBatch, setAppendBatch] = useState<any | null>(null)
   const [isAppending, setIsAppending] = useState(false)
   const [hasAutoSynced, setHasAutoSynced] = useState(false)
+
+  // Template Settings State
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('mikhmon')
+  const [templateHeader, setTemplateHeader] = useState<string>('Wi-Fi ALLSTAR')
+  const [templatePortal, setTemplatePortal] = useState<string>('allstar.net')
+  const [templateShowAgent, setTemplateShowAgent] = useState<boolean>(true)
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState<boolean>(false)
+
+  // Load template preferences from localStorage
+  React.useEffect(() => {
+    try {
+      const savedTpl = localStorage.getItem('agent_voucher_tpl')
+      if (savedTpl) setSelectedTemplate(savedTpl)
+      const savedHdr = localStorage.getItem('agent_voucher_hdr')
+      if (savedHdr) setTemplateHeader(savedHdr)
+      const savedPtl = localStorage.getItem('agent_voucher_ptl')
+      if (savedPtl) setTemplatePortal(savedPtl)
+      const savedAg = localStorage.getItem('agent_voucher_ag')
+      if (savedAg !== null) setTemplateShowAgent(savedAg === 'true')
+    } catch (e) {}
+  }, [])
+
+  const saveTemplateConfig = (tpl: string, hdr: string, ptl: string, showAg: boolean) => {
+    setSelectedTemplate(tpl)
+    setTemplateHeader(hdr)
+    setTemplatePortal(ptl)
+    setTemplateShowAgent(showAg)
+    try {
+      localStorage.setItem('agent_voucher_tpl', tpl)
+      localStorage.setItem('agent_voucher_hdr', hdr)
+      localStorage.setItem('agent_voucher_ptl', ptl)
+      localStorage.setItem('agent_voucher_ag', String(showAg))
+    } catch (e) {}
+    toast.success('Pengaturan template voucher berhasil disimpan!')
+  }
 
   // Calculate totals for Cloter Depan
   const totalSales = unsettledVouchers.reduce((sum: number, v: any) => sum + (v.packages ? v.packages.price : 0), 0)
@@ -120,7 +193,11 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
       setHasAutoSynced(true)
       doAutoSync()
     }
-  }, [hasAutoSynced, stockData, agent.id, router])
+
+    return () => {
+      isMounted = false
+    }
+  }, [stockData, hasAutoSynced, agent.id, router])
 
   async function handleDeleteCloter(cloterKey: string, cloterData: any) {
     if (!confirm(`Yakin mau hapus ${cloterData.vouchers.length} voucher di cloter ini? Data di database dan MikroTik akan dihapus permanen.`)) return
@@ -229,14 +306,15 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
     e.preventDefault()
     setIsGenerating(true)
     const formData = new FormData(e.currentTarget)
-    const pkgId = formData.get('package_id') as string
-    const qty = parseInt(formData.get('quantity') as string)
-    const prefix = formData.get('prefix') as string
-    const server = formData.get('server') as string
-    const randomType = formData.get('randomType') as 'numeric' | 'alphanumeric'
     
     try {
-      const res = await generateAgentVouchers(agent.id, pkgId, server, qty, prefix, randomType)
+      const packageId = formData.get('package_id') as string
+      const qty = parseInt(formData.get('quantity') as string)
+      const server = formData.get('server') as string
+      const prefix = formData.get('prefix') as string
+      const randomType = (formData.get('randomType') as 'numeric' | 'alphanumeric') || 'alphanumeric'
+
+      const res = await generateAgentVouchers(agent.id, packageId, server, qty, prefix, randomType)
       if (res?.error) {
         toast.error(res.error)
       } else {
@@ -261,16 +339,187 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
     router.refresh()
   }
 
-  function handlePrint(vouchersToPrint: any[]) {
+  function generateSingleVoucherHtml(v: any, index: number, config: { template: string; header: string; portal: string; showAgent: boolean; agentName: string }) {
+    const price = v.packages ? v.packages.price : 0
+    const username = v.mikrotik_username || v.username || '-'
+    const num = String(index + 1).padStart(3, '0')
+    const formatPrice = `Rp ${price.toLocaleString('id-ID')}`
+    const priceParts = formatPrice.split(' ')
+    const { template, header, portal, showAgent, agentName } = config
+
+    let color = "#00ACC1"
+    if(price == 2000) color = "#616161"
+    else if(price == 5000) color = "#E91E63"
+    else if(price == 8000) color = "#673AB7"
+    else if(price == 22000) color = "#1976D2"
+    else if(price == 70000) color = "#28A745"
+    else if(price == 150000) color = "#FF6F00"
+    else if(price == 1500000) color = "#0D47A1"
+
+    if (template === 'minimalist') {
+      return `
+        <div style="display:inline-block;width:190px;margin:3px;padding:8px;border:1.5px solid #00A76F;border-radius:8px;background:#fff;page-break-inside:avoid;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed #cbd5e1;padding-bottom:4px;margin-bottom:6px;">
+            <div style="font-weight:800;font-size:10px;color:#007867;letter-spacing:0.5px;">${header}</div>
+            <div style="font-weight:800;font-size:11px;color:#fff;background:#00A76F;padding:1px 6px;border-radius:4px;">${formatPrice}</div>
+          </div>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px;text-align:center;margin-bottom:6px;">
+            <div style="font-size:8px;color:#64748b;font-weight:bold;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">KODE VOUCHER</div>
+            <div style="font-family:monospace;font-size:15px;font-weight:900;color:#0f172a;letter-spacing:1.5px;">${username}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:7.5px;color:#475569;font-weight:600;">
+            <div>${showAgent ? `Agen: <b>${agentName}</b>` : `#${num}`}</div>
+            <div style="color:#007867;font-weight:bold;">${portal}</div>
+          </div>
+        </div>
+      `
+    }
+
+    if (template === 'thermal') {
+      return `
+        <div style="display:inline-block;width:180px;margin:2px;padding:6px;border:1px solid #000;background:#fff;page-break-inside:avoid;box-sizing:border-box;font-family:monospace;text-align:center;">
+          <div style="font-size:11px;font-weight:bold;text-transform:uppercase;border-bottom:1px dashed #000;padding-bottom:3px;margin-bottom:4px;">
+            ${header}
+          </div>
+          <div style="font-size:13px;font-weight:bold;margin-bottom:2px;">
+            ${formatPrice}
+          </div>
+          <div style="font-size:8px;margin-bottom:3px;font-weight:bold;">KUOTA: UNLIMITED</div>
+          <div style="border:1.5px solid #000;padding:4px;margin:4px 0;">
+            <div style="font-size:8px;text-transform:uppercase;">KODE VOUCHER:</div>
+            <div style="font-size:15px;font-weight:bold;letter-spacing:1.5px;">${username}</div>
+          </div>
+          <div style="font-size:7.5px;border-top:1px dashed #000;padding-top:3px;margin-top:4px;">
+            ${showAgent ? `AGEN: ${agentName.toUpperCase()} • ` : ''}LOGIN: ${portal}
+          </div>
+        </div>
+      `
+    }
+
+    if (template === 'compact') {
+      return `
+        <div style="display:inline-block;width:155px;margin:2px;padding:4px 6px;border:1px solid #333;background:#fff;page-break-inside:avoid;box-sizing:border-box;font-family:sans-serif;">
+          <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:bold;border-bottom:1px solid #ccc;padding-bottom:2px;">
+            <span style="color:#007867;">${header}</span>
+            <span style="color:#d97706;">${formatPrice}</span>
+          </div>
+          <div style="text-align:center;padding:4px 0;">
+            <div style="font-family:monospace;font-size:13px;font-weight:bold;letter-spacing:1px;color:#000;">${username}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:7px;color:#666;border-top:1px dotted #ccc;padding-top:2px;">
+            <span>${showAgent ? agentName : `#${num}`}</span>
+            <span>${portal}</span>
+          </div>
+        </div>
+      `
+    }
+
+    if (template === 'dark') {
+      return `
+        <div style="display:inline-block;width:190px;margin:3px;padding:8px;border:1.5px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;page-break-inside:avoid;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;padding-bottom:4px;margin-bottom:6px;">
+            <div style="font-weight:800;font-size:10px;color:#38bdf8;letter-spacing:0.5px;">${header}</div>
+            <div style="font-weight:800;font-size:11px;color:#0f172a;background:#38bdf8;padding:1px 6px;border-radius:4px;">${formatPrice}</div>
+          </div>
+          <div style="background:#1e293b;border:1px solid #475569;border-radius:6px;padding:6px;text-align:center;margin-bottom:6px;">
+            <div style="font-size:8px;color:#94a3b8;font-weight:bold;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">VOUCHER CODE</div>
+            <div style="font-family:monospace;font-size:15px;font-weight:900;color:#38bdf8;letter-spacing:2px;">${username}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:7.5px;color:#94a3b8;font-weight:600;">
+            <div>${showAgent ? `Agen: ${agentName}` : `#${num}`}</div>
+            <div style="color:#38bdf8;">${portal}</div>
+          </div>
+        </div>
+      `
+    }
+
+    // Default: Mikhmon Classic Clean (No Validity / No Duration)
+    return `
+      <table style="display:inline-block;border-collapse:collapse;border:1px solid #000;width:190px;overflow:hidden;margin:2px; page-break-inside: avoid;">
+      <tbody>
+      <tr>
+      <td valign="top">
+      <table style="width:100%;border-collapse:collapse;">
+      <tbody>
+      <tr>
+      <td style="width:85px;vertical-align:middle;padding:5px;">
+      <div style="position:relative;z-index:-1;padding:0;float:left;">
+      <div style="position:absolute;top:0;display:inline;margin-top:-100px;width:0;height:0;border-top:230px solid transparent;border-left:50px solid transparent;border-right:140px solid #DCDCDC;"></div>
+      </div>
+      <img style="width:100%;height:30px;object-fit:cover;object-position:left;" src="/logo-allstar.png" alt="logo" onerror="this.style.display='none'">
+      </td>
+      <td style="width:105px;vertical-align:middle;">
+      <div style="text-align:right;font-size:8px;font-weight:bold;color:#666;padding-right:5px;margin-bottom:2px;">
+      #${num}
+      </div>
+      <div style="text-align:right;font-weight:bold;font-family:Tahoma,sans-serif;font-size:16px;padding-right:5px;color:${color}">
+      <span style="font-size:10px;">${priceParts[0]}</span> ${priceParts[1] || ''}
+      </div>
+      </td>
+      </tr>
+      </tbody>
+      </table>
+      </td>
+      </tr>
+      <tr>
+      <td valign="top">
+      <table style="width:100%;border-collapse:collapse;">
+      <tbody>
+      <tr>
+      <td style="width:90px;" valign="top">
+      <div style="padding:2px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:10px;">
+      VOUCHER
+      </div>
+      <div style="padding:3px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:14px;color:#000;font-family:monospace;">
+      ${username}
+      </div>
+      ${showAgent ? `<div style="text-align:center;color:#111;font-size:7px;font-weight:bold;padding:2px;">AGEN: ${agentName.toUpperCase()}</div>` : ''}
+      </td>
+      <td style="width:100px;text-align:right;vertical-align:middle;padding-right:5px;padding-left:2px;">
+        <table style="width:100%; border:none; border-collapse:collapse;">
+          <tr>
+            <td style="text-align:right; font-size:8px; font-weight:bold; color:#000; line-height:1.3; padding:0; padding-right:4px;">
+              <span style="color:#007867;">KUOTA: UNLIMITED</span><br>
+              <span style="color:#666; font-size:7px;">Login: ${portal}</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+      </tr>
+      <tr>
+      <td colspan="2" style="background:${color};padding:0;">
+      <div style="color:#fff;font-size:9px;font-weight:bold;padding:2.5px;text-align:center;">
+      ${header}
+      </div>
+      </td>
+      </tr>
+      </tbody>
+      </table>
+      </td>
+      </tr>
+      </tbody>
+      </table>
+    `
+  }
+
+  function handlePrint(vouchersToPrint: any[], templateOverride?: string) {
     if (!vouchersToPrint || vouchersToPrint.length === 0) {
       alert("Tidak ada voucher untuk dicetak.")
       return
     }
 
+    const currentConfig = {
+      template: templateOverride || selectedTemplate,
+      header: templateHeader,
+      portal: templatePortal,
+      showAgent: templateShowAgent,
+      agentName: agent.name
+    }
+
     let html = `
       <html>
         <head>
-          <title>Print Voucher Agen</title>
+          <title>Print Voucher Agen - ${agent.name}</title>
           <style>
             body { 
               font-family: sans-serif; 
@@ -278,12 +527,12 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
               padding: 10px; 
               display: flex; 
               flex-wrap: wrap; 
-              gap: 10px; 
+              gap: 8px; 
               justify-content: center; 
               align-items: flex-start;
             }
             @media print {
-              body { padding: 0; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 10px; }
+              body { padding: 0; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 8px; }
               .page-break { page-break-after: auto; }
             }
           </style>
@@ -292,99 +541,12 @@ export default function AgentDetailClient({ agent, unsettledVouchers, settlement
     `
     
     vouchersToPrint.forEach((v: any, index: number) => {
-      const price = v.packages ? v.packages.price : 0
-      const duration = v.packages ? v.packages.duration_days : 0
-      const username = v.mikrotik_username || '-'
-      const num = String(index + 1).padStart(3, '0')
-      
-      let color = "#00ACC1"
-      if(price == 2000) color = "#616161"
-      else if(price == 5000) color = "#E91E63"
-      else if(price == 8000) color = "#673AB7"
-      else if(price == 22000) color = "#1976D2"
-      else if(price == 70000) color = "#28A745"
-      else if(price == 150000) color = "#FF6F00"
-      else if(price == 1500000) color = "#0D47A1"
-
-      const validityStr = `MASA AKTIF : ${duration} HARI`
-      const timeLimitStr = `DURASI : ${duration} HARI`
-      const dataLimitStr = `UNLIMITED`
-      
-      const formatPrice = `Rp ${price.toLocaleString('id-ID')}`
-      const priceParts = formatPrice.split(" ")
-
-      html += `
-        <table style="display:inline-block;border-collapse:collapse;border:1px solid #000;width:190px;overflow:hidden;margin:2px; page-break-inside: avoid;">
-        <tbody>
-        <tr>
-        <td valign="top">
-        <table style="width:100%;border-collapse:collapse;">
-        <tbody>
-        <tr>
-        <td style="width:85px;vertical-align:middle;padding:5px;">
-        <div style="position:relative;z-index:-1;padding:0;float:left;">
-        <div style="position:absolute;top:0;display:inline;margin-top:-100px;width:0;height:0;border-top:230px solid transparent;border-left:50px solid transparent;border-right:140px solid #DCDCDC;"></div>
-        </div>
-        <img style="width:100%;height:30px;object-fit:cover;object-position:left;" src="/logo-allstar.png" alt="logo" onerror="this.style.display='none'">
-        </td>
-        <td style="width:105px;vertical-align:middle;">
-        <div style="text-align:right;font-size:8px;font-weight:bold;color:#666;padding-right:5px;margin-bottom:2px;">
-        #${num}
-        </div>
-        <div style="text-align:right;font-weight:bold;font-family:Tahoma,sans-serif;font-size:16px;padding-right:5px;color:${color}">
-        <span style="font-size:10px;">${priceParts[0]}</span> ${priceParts[1] || ''}
-        </div>
-        </td>
-        </tr>
-        </tbody>
-        </table>
-        </td>
-        </tr>
-        <tr>
-        <td valign="top">
-        <table style="width:100%;border-collapse:collapse;">
-        <tbody>
-        <tr>
-        <td style="width:90px;" valign="top">
-        <div style="padding:2px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:10px;">
-        VOUCHER
-        </div>
-        <div style="padding:2px 0;border-bottom:1px solid ${color};text-align:center;font-weight:bold;font-size:14px;color:#000;">
-        ${username}
-        </div>
-        <div style="text-align:center;color:#111;font-size:7px;font-weight:bold;padding:2px;">
-        AGEN: ${agent.name.toUpperCase()}
-        </div>
-        </td>
-        <td style="width:100px;text-align:right;vertical-align:middle;padding-right:5px;padding-left:2px;">
-          <table style="width:100%; border:none; border-collapse:collapse;">
-            <tr>
-              <td style="text-align:right; font-size:7px; font-weight:bold; color:#000; line-height:1.2; padding:0; padding-right:4px;">
-                ${validityStr}<br>${timeLimitStr}<br>${dataLimitStr}
-              </td>
-            </tr>
-          </table>
-        </td>
-        </tr>
-        <tr>
-        <td colspan="2" style="background:${color};padding:0;">
-        <div style="color:#fff;font-size:9px;font-weight:bold;padding:2.5px;text-align:center;">
-        Wi-Fi ALLSTAR
-        </div>
-        </td>
-        </tr>
-        </tbody>
-        </table>
-        </td>
-        </tr>
-        </tbody>
-        </table>
-      `
+      html += generateSingleVoucherHtml(v, index, currentConfig)
     })
 
     html += `</body></html>`
     
-    const printWindow = window.open('', '', 'width=800,height=600')
+    const printWindow = window.open('', '', 'width=850,height=650')
     if (printWindow) {
       printWindow.document.write(html)
       printWindow.document.close()
@@ -411,28 +573,53 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard/agents">
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Store className="w-5 h-5 text-[#00A76F]" />
-            Agen: {agent.name}
-          </h1>
-          <p className="text-muted-foreground text-sm flex items-center gap-1">
-            <Phone className="w-3 h-3" /> {agent.whatsapp_number || 'Tidak ada nomor'} | Komisi: {agent.commission_rate}%
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard/agents">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Store className="w-5 h-5 text-[#00A76F]" />
+              Agen: {agent.name}
+            </h1>
+            <p className="text-muted-foreground text-sm flex items-center gap-1">
+              <Phone className="w-3 h-3" /> {agent.whatsapp_number || 'Tidak ada nomor'} | Komisi: {agent.commission_rate}%
+            </p>
+          </div>
         </div>
+
+        <Button
+          variant="outline"
+          onClick={() => setIsTemplateDialogOpen(true)}
+          className="border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 font-semibold gap-2 shadow-xs"
+        >
+          <Palette className="w-4 h-4" />
+          <span>Desain Template Voucher</span>
+          <span className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">
+            {VOUCHER_TEMPLATES.find(t => t.id === selectedTemplate)?.name.split(' ')[0] || 'Clean'}
+          </span>
+        </Button>
       </div>
 
       {/* Stok Sisa Voucher per Cloter */}
       <div className="bg-card border rounded-2xl shadow-sm overflow-hidden mt-8">
-        <div className="p-5 border-b bg-muted/20">
-          <h2 className="text-lg font-bold text-foreground">Stok Sisa Voucher per Cloter (Konsinyasi)</h2>
-          <p className="text-sm text-muted-foreground">Pantau berapa total tiket yang lu kasih ke agen dan berapa yang belom laku per tarikan (cloter).</p>
+        <div className="p-5 border-b bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Stok Sisa Voucher per Cloter (Konsinyasi)</h2>
+            <p className="text-sm text-muted-foreground">Pantau berapa total tiket yang lu kasih ke agen dan berapa yang belom laku per tarikan (cloter).</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsTemplateDialogOpen(true)}
+            className="text-xs font-semibold gap-1.5 border-border shrink-0"
+          >
+            <Palette className="w-3.5 h-3.5 text-indigo-500" />
+            Ganti Template Print
+          </Button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -810,6 +997,151 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
               {isAppending ? 'Menambahkan...' : 'Generate & Tambah ke Cloter'}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Desain & Template Voucher Agen */}
+      <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Palette className="w-5 h-5 text-indigo-500" />
+              Panel Desain & Template Voucher Agen
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Pilih gaya tampilan cetak voucher dan sesuaikan informasi yang ingin ditampilkan.
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-6 pt-4">
+            {/* Pilihan Template (Grid Cards) */}
+            <div className="space-y-2.5">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Pilih Gaya Desain Template ({VOUCHER_TEMPLATES.length} Pilihan):
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {VOUCHER_TEMPLATES.map((tpl) => {
+                  const isSelected = selectedTemplate === tpl.id
+                  return (
+                    <div
+                      key={tpl.id}
+                      onClick={() => setSelectedTemplate(tpl.id)}
+                      className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all relative flex flex-col justify-between ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-500/5 shadow-sm ring-2 ring-indigo-500/20'
+                          : 'border-border/60 hover:border-border hover:bg-muted/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                          {isSelected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />}
+                          <span>{tpl.name}</span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tpl.previewBg}`}>
+                          {tpl.badge}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                        {tpl.description}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Opsi Kustomisasi Header & Teks */}
+            <div className="bg-muted/40 p-4 rounded-xl space-y-4 border border-border/50">
+              <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-foreground">
+                <Settings2 className="w-4 h-4 text-primary" />
+                <span>Pengaturan Teks & Informasi Voucher:</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1.5">
+                  <Label htmlFor="tplHeader" className="text-xs font-semibold">Judul Banner / Brand</Label>
+                  <Input
+                    id="tplHeader"
+                    value={templateHeader}
+                    onChange={(e) => setTemplateHeader(e.target.value)}
+                    placeholder="Wi-Fi ALLSTAR"
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tplPortal" className="text-xs font-semibold">Domain Login Portal</Label>
+                  <Input
+                    id="tplPortal"
+                    value={templatePortal}
+                    onChange={(e) => setTemplatePortal(e.target.value)}
+                    placeholder="allstar.net"
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <label className="flex items-center gap-2 text-xs font-medium cursor-pointer text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={templateShowAgent}
+                    onChange={(e) => setTemplateShowAgent(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600"
+                  />
+                  <span>Tampilkan Label Nama Agen (AGEN: {agent.name.toUpperCase()})</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Live Preview Box */}
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Pratinjau Langsung (Live Preview):</span>
+              </Label>
+              <div className="p-4 bg-muted/60 border border-border/60 rounded-xl flex justify-center items-center overflow-x-auto min-h-[140px]">
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: generateSingleVoucherHtml(
+                      { mikrotik_username: '6jsxwg6f', packages: { price: 5000 } },
+                      0,
+                      {
+                        template: selectedTemplate,
+                        header: templateHeader,
+                        portal: templatePortal,
+                        showAgent: templateShowAgent,
+                        agentName: agent.name
+                      }
+                    )
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1 rounded-xl font-semibold gap-2"
+                onClick={() => {
+                  handlePrint([{ mikrotik_username: '6jsxwg6f', packages: { price: 5000 } }], selectedTemplate)
+                }}
+              >
+                <Printer className="w-4 h-4" />
+                Cetak Contoh Voucher (Test Print)
+              </Button>
+              <Button
+                className="flex-1 bg-[#00A76F] hover:bg-[#007867] text-white rounded-xl font-semibold gap-2 shadow-sm"
+                onClick={() => {
+                  saveTemplateConfig(selectedTemplate, templateHeader, templatePortal, templateShowAgent)
+                  setIsTemplateDialogOpen(false)
+                }}
+              >
+                <Check className="w-4 h-4" />
+                Simpan Sebagai Template Aktif
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

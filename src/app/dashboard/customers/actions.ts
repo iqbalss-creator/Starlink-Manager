@@ -365,23 +365,45 @@ export async function createCustomer(formData: FormData) {
     }
   }
 
+  let cleanName = name.substring(0, 3).toLowerCase().replace(/[^a-z]/g, '')
+  while (cleanName.length < 3) cleanName += 'x'
+  const cleanWa = whatsapp_number.replace(/\D/g, '')
+  const last3 = cleanWa.length >= 3 ? cleanWa.substring(cleanWa.length - 3) : '000'
+
+  // Ambil user di database yang sudah ada dengan prefix yang sama
+  const { data: existingVouchersDb } = await supabase
+    .from('vouchers')
+    .select('mikrotik_username')
+    .ilike('mikrotik_username', `${cleanName}${last3}%`)
+  const existingUsernames = new Set((existingVouchersDb || []).map(v => (v.mikrotik_username || '').toLowerCase()))
+
+  // Ambil list user dari MikroTik agar tidak bentrok
+  let mtUsersList: any[] = []
+  try {
+    mtUsersList = await mikrotikQuery('/ip/hotspot/user/print')
+  } catch (e) {
+    console.error('Gagal membaca user MikroTik saat buat customer:', e)
+  }
+  const mtUsernames = new Set(mtUsersList.map((u: any) => (u.name || '').toLowerCase()))
+
+  const today = new Date()
+  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+  const mikhmonDate = `${months[today.getMonth()]}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
+  const commentStr = `vc-${mikhmonDate}-${name.substring(0,5)}`
+
+  let currentSuffix = 1
   // 2. Loop generate sebanyak qty (Voucher)
   for (let i = 0; i < qty; i++) {
-    // Generate MikroTik Username (tambahkan index i agar unik jika > 1)
-    let cleanName = name.substring(0, 3).toLowerCase().replace(/[^a-z]/g, '')
-    while (cleanName.length < 3) cleanName += 'x'
-    
-    const cleanWa = whatsapp_number.replace(/\D/g, '')
-    const last3 = cleanWa.length >= 3 ? cleanWa.substring(cleanWa.length - 3) : '000'
-    
-    // Gunakan nomor urut (1 digit) sesuai request
-    const username = `${cleanName}${last3}${i + 1}`
-    const password = username
+    let username = `${cleanName}${last3}${currentSuffix}`
+    while (existingUsernames.has(username.toLowerCase()) || mtUsernames.has(username.toLowerCase())) {
+      currentSuffix++
+      username = `${cleanName}${last3}${currentSuffix}`
+    }
+    currentSuffix++
+    existingUsernames.add(username.toLowerCase())
+    mtUsernames.add(username.toLowerCase())
 
-    const today = new Date()
-    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
-    const mikhmonDate = `${months[today.getMonth()]}/${today.getDate().toString().padStart(2, '0')}/${today.getFullYear()}`
-    const commentStr = `vc-${mikhmonDate}-${name.substring(0,5)}`
+    const password = username
 
     // Insert ke MikroTik
     try {
@@ -392,23 +414,25 @@ export async function createCustomer(formData: FormData) {
         `=server=${server}`,
         `=comment=${commentStr}`
       ])
-    } catch (err) {
-      if ((err as Error).message.includes('already exists')) {
+    } catch (err: any) {
+      const errMsg = err?.message || ''
+      if (errMsg.includes('already have user') || errMsg.includes('already exists') || errMsg.includes('failure')) {
         try {
           await mikrotikQuery('/ip/hotspot/user/set', [
             `=numbers=${username}`,
             `=password=${password}`,
-            `=profile=default`,
+            `=profile=${profile}`,
             `=server=${server}`,
-            `=comment=${commentStr}`
+            `=comment=${commentStr}`,
+            `=disabled=no`
           ])
-        } catch (fallbackErr) {
+        } catch (fallbackErr: any) {
           console.error(fallbackErr)
-          throw new Error(`Gagal update user yang sudah ada di MikroTik: ${(fallbackErr as Error).message}`)
+          throw new Error(`Gagal update user ${username} di MikroTik: ${fallbackErr.message}`)
         }
       } else {
         console.error(err)
-        throw new Error(`Gagal membuat user di MikroTik: ${(err as Error).message}`)
+        throw new Error(`Gagal membuat user di MikroTik: ${errMsg}`)
       }
     }
 
@@ -455,21 +479,14 @@ export async function addVouchersToCustomer(customerId: string, formData: FormDa
 
   const supabase = await createClient()
 
-  // Ambil jumlah voucher yang sudah ada untuk generate nomor yang benar
-  const { data: existingVouchers } = await supabase
-    .from('vouchers')
-    .select('id')
-    .eq('customer_id', customerId)
-  const existingCount = existingVouchers?.length || 0
-
   // Ambil profile mikrotik dari package
   let profile = 'default'
-  let pkg: any = null
+  let pkgData: any = null
   if (package_id) {
-    const { data: pkgData } = await supabase.from('packages').select('name, price').eq('id', package_id).single()
-    if (pkgData) {
-      profile = pkgData.name
-      pkg = pkgData
+    const { data: p } = await supabase.from('packages').select('name, price').eq('id', package_id).single()
+    if (p) {
+      profile = p.name
+      pkgData = p
     }
   }
 
@@ -483,9 +500,34 @@ export async function addVouchersToCustomer(customerId: string, formData: FormDa
   const cleanWa = whatsapp_number.replace(/\D/g, '')
   const last3 = cleanWa.length >= 3 ? cleanWa.substring(cleanWa.length - 3) : '000'
 
+  // Ambil semua username yang sudah ada di database untuk prefix cleanName+last3
+  const { data: existingVouchersDb } = await supabase
+    .from('vouchers')
+    .select('mikrotik_username')
+    .ilike('mikrotik_username', `${cleanName}${last3}%`)
+  const existingUsernames = new Set((existingVouchersDb || []).map(v => (v.mikrotik_username || '').toLowerCase()))
+
+  // Ambil list user dari MikroTik agar tidak bentrok
+  let mtUsersList: any[] = []
+  try {
+    mtUsersList = await mikrotikQuery('/ip/hotspot/user/print')
+  } catch (e) {
+    console.error('Gagal mengambil list user dari MikroTik:', e)
+  }
+  const mtUsernames = new Set(mtUsersList.map((u: any) => (u.name || '').toLowerCase()))
+
+  let currentSuffix = 1
   for (let i = 0; i < qty; i++) {
-    const suffix = existingCount + i + 1
-    const username = `${cleanName}${last3}${suffix}`
+    let username = `${cleanName}${last3}${currentSuffix}`
+    // Cari nomor urut berikutnya yang belum pernah dipakai di DB ataupun di MikroTik
+    while (existingUsernames.has(username.toLowerCase()) || mtUsernames.has(username.toLowerCase())) {
+      currentSuffix++
+      username = `${cleanName}${last3}${currentSuffix}`
+    }
+    currentSuffix++
+    existingUsernames.add(username.toLowerCase())
+    mtUsernames.add(username.toLowerCase())
+
     const password = username
 
     try {
@@ -496,23 +538,25 @@ export async function addVouchersToCustomer(customerId: string, formData: FormDa
         `=server=${server}`,
         `=comment=${commentStr}`
       ])
-    } catch (err) {
-      if ((err as Error).message.includes('already exists')) {
+    } catch (err: any) {
+      const errMsg = err?.message || ''
+      if (errMsg.includes('already have user') || errMsg.includes('already exists') || errMsg.includes('failure')) {
         try {
           await mikrotikQuery('/ip/hotspot/user/set', [
             `=numbers=${username}`,
             `=password=${password}`,
             `=profile=${profile}`,
             `=server=${server}`,
-            `=comment=${commentStr}`
+            `=comment=${commentStr}`,
+            `=disabled=no`
           ])
-        } catch (fallbackErr) {
+        } catch (fallbackErr: any) {
           console.error(fallbackErr)
-          throw new Error(`Gagal update user yang sudah ada di MikroTik: ${(fallbackErr as Error).message}`)
+          throw new Error(`Gagal update user ${username} di MikroTik: ${fallbackErr.message}`)
         }
       } else {
         console.error(err)
-        throw new Error(`Gagal membuat user di MikroTik: ${(err as Error).message}`)
+        throw new Error(`Gagal membuat user di MikroTik: ${errMsg}`)
       }
     }
 
@@ -532,10 +576,10 @@ export async function addVouchersToCustomer(customerId: string, formData: FormDa
       throw new Error("Gagal membuat voucher di database: " + vErr.message)
     }
 
-    if (payment_status === 'Lunas' && package_id && pkg && (pkg as any).price > 0) {
+    if (payment_status === 'Lunas' && package_id && pkgData && pkgData.price > 0) {
       await supabase.from('payments').insert([{
         customer_id: customerId,
-        amount: pkg.price,
+        amount: pkgData.price,
         payment_date: new Date().toISOString(),
         method: 'Tunai',
         notes: `Pembelian Voucher: ${username}`

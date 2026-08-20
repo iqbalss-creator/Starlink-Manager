@@ -1000,146 +1000,174 @@ Mohon bantuannya untuk melakukan setoran ya. Terima kasih! 🙏`
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Desain & Template Voucher Agen */}
+      {/* Dialog Desain & Template Voucher Agen (Ultra Responsive PC & Mobile) */}
       <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              <Palette className="w-5 h-5 text-indigo-500" />
-              Panel Desain & Template Voucher Agen
-            </DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Pilih gaya tampilan cetak voucher dan sesuaikan informasi yang ingin ditampilkan.
-            </p>
-          </DialogHeader>
+        <DialogContent className="w-[96vw] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl max-h-[92vh] flex flex-col p-0 rounded-2xl overflow-hidden shadow-2xl border bg-background">
+          {/* Header Modal */}
+          <div className="p-4 sm:p-5 border-b bg-muted/30 flex items-center justify-between shrink-0">
+            <div>
+              <DialogTitle className="text-lg sm:text-xl font-bold flex items-center gap-2 text-foreground">
+                <Palette className="w-5 h-5 text-indigo-500 shrink-0" />
+                <span>Desain & Template Voucher Agen</span>
+              </DialogTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                Pilih gaya tampilan cetak dan sesuaikan informasi voucher yang diinginkan.
+              </p>
+            </div>
+          </div>
 
-          <div className="space-y-6 pt-4">
-            {/* Pilihan Template (Grid Cards) */}
-            <div className="space-y-2.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Pilih Gaya Desain Template ({VOUCHER_TEMPLATES.length} Pilihan):
-              </Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {VOUCHER_TEMPLATES.map((tpl) => {
-                  const isSelected = selectedTemplate === tpl.id
-                  return (
-                    <div
-                      key={tpl.id}
-                      onClick={() => setSelectedTemplate(tpl.id)}
-                      className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all relative flex flex-col justify-between ${
-                        isSelected
-                          ? 'border-indigo-500 bg-indigo-500/5 shadow-sm ring-2 ring-indigo-500/20'
-                          : 'border-border/60 hover:border-border hover:bg-muted/30'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="font-bold text-sm text-foreground flex items-center gap-1.5">
-                          {isSelected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />}
-                          <span>{tpl.name}</span>
+          {/* Body Konten Modal (Scrollable) */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              {/* Kolom Kiri: Pilihan Template & Pengaturan (7 cols di PC) */}
+              <div className="lg:col-span-7 space-y-5">
+                
+                {/* Pilihan Gaya Desain Template */}
+                <div className="space-y-2.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Pilih Gaya Desain Template:
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {VOUCHER_TEMPLATES.map((tpl) => {
+                      const isSelected = selectedTemplate === tpl.id
+                      return (
+                        <div
+                          key={tpl.id}
+                          onClick={() => setSelectedTemplate(tpl.id)}
+                          className={`p-3 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-indigo-500 bg-indigo-500/10 shadow-xs ring-1 ring-indigo-500'
+                              : 'border-border/70 hover:border-border hover:bg-muted/40'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center gap-2 mb-1">
+                            <div className="font-bold text-xs sm:text-sm text-foreground flex items-center gap-1.5 min-w-0">
+                              {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}
+                              <span className="truncate">{tpl.name}</span>
+                            </div>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${tpl.previewBg}`}>
+                              {tpl.badge}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed mt-0.5">
+                            {tpl.description}
+                          </p>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tpl.previewBg}`}>
-                          {tpl.badge}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-                        {tpl.description}
-                      </p>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Box Pengaturan Header & Domain */}
+                <div className="bg-muted/30 p-4 rounded-xl space-y-3.5 border border-border/60">
+                  <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-foreground">
+                    <Settings2 className="w-4 h-4 text-primary shrink-0" />
+                    <span>Pengaturan Teks & Informasi Voucher:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div className="space-y-1">
+                      <Label htmlFor="tplHeader" className="text-xs font-semibold">Judul Banner / Brand</Label>
+                      <Input
+                        id="tplHeader"
+                        value={templateHeader}
+                        onChange={(e) => setTemplateHeader(e.target.value)}
+                        placeholder="Wi-Fi ALLSTAR"
+                        className="h-9 text-xs bg-background"
+                      />
                     </div>
-                  )
-                })}
-              </div>
-            </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="tplPortal" className="text-xs font-semibold">Domain Login Portal</Label>
+                      <Input
+                        id="tplPortal"
+                        value={templatePortal}
+                        onChange={(e) => setTemplatePortal(e.target.value)}
+                        placeholder="allstar.net"
+                        className="h-9 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
 
-            {/* Opsi Kustomisasi Header & Teks */}
-            <div className="bg-muted/40 p-4 rounded-xl space-y-4 border border-border/50">
-              <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-foreground">
-                <Settings2 className="w-4 h-4 text-primary" />
-                <span>Pengaturan Teks & Informasi Voucher:</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                <div className="space-y-1.5">
-                  <Label htmlFor="tplHeader" className="text-xs font-semibold">Judul Banner / Brand</Label>
-                  <Input
-                    id="tplHeader"
-                    value={templateHeader}
-                    onChange={(e) => setTemplateHeader(e.target.value)}
-                    placeholder="Wi-Fi ALLSTAR"
-                    className="h-9 text-xs"
-                  />
+                  <div className="pt-1">
+                    <label className="flex items-center gap-2 text-xs font-medium cursor-pointer text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={templateShowAgent}
+                        onChange={(e) => setTemplateShowAgent(e.target.checked)}
+                        className="w-4 h-4 rounded text-indigo-600"
+                      />
+                      <span>Tampilkan Label Nama Agen ({agent.name.toUpperCase()})</span>
+                    </label>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="tplPortal" className="text-xs font-semibold">Domain Login Portal</Label>
-                  <Input
-                    id="tplPortal"
-                    value={templatePortal}
-                    onChange={(e) => setTemplatePortal(e.target.value)}
-                    placeholder="allstar.net"
-                    className="h-9 text-xs"
-                  />
+
+              </div>
+
+              {/* Kolom Kanan: Pratinjau Langsung & Tombol Aksi (5 cols di PC, Sticky) */}
+              <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-0">
+                <div className="bg-card p-4 rounded-xl border border-border/80 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>Pratinjau Hasil Cetak:</span>
+                    </Label>
+                    <span className="text-[10px] bg-muted px-2 py-0.5 rounded-full font-mono text-muted-foreground">
+                      Scale 100%
+                    </span>
+                  </div>
+
+                  {/* Preview Voucher Render */}
+                  <div className="p-3 bg-slate-950/5 dark:bg-black/40 border border-dashed border-border rounded-xl flex justify-center items-center overflow-x-auto min-h-[150px]">
+                    <div
+                      className="transform scale-95 origin-center transition-all shrink-0"
+                      dangerouslySetInnerHTML={{
+                        __html: generateSingleVoucherHtml(
+                          { mikrotik_username: '6jsxwg6f', packages: { price: 5000 } },
+                          0,
+                          {
+                            template: selectedTemplate,
+                            header: templateHeader,
+                            portal: templatePortal,
+                            showAgent: templateShowAgent,
+                            agentName: agent.name
+                          }
+                        )
+                      }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-center text-muted-foreground">
+                    Format bersih tanpa teks masa aktif/durasi yang salah.
+                  </p>
                 </div>
+
+                {/* Tombol Simpan & Test Cetak */}
+                <div className="flex flex-col gap-2.5">
+                  <Button
+                    className="w-full bg-[#00A76F] hover:bg-[#007867] text-white rounded-xl font-bold gap-2 shadow-sm h-10 sm:h-11 text-sm"
+                    onClick={() => {
+                      saveTemplateConfig(selectedTemplate, templateHeader, templatePortal, templateShowAgent)
+                      setIsTemplateDialogOpen(false)
+                    }}
+                  >
+                    <Check className="w-4 h-4" />
+                    Simpan Sebagai Template Aktif
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-xl font-semibold gap-2 h-9 sm:h-10 text-xs sm:text-sm border-border"
+                    onClick={() => {
+                      handlePrint([{ mikrotik_username: '6jsxwg6f', packages: { price: 5000 } }], selectedTemplate)
+                    }}
+                  >
+                    <Printer className="w-4 h-4" />
+                    Cetak Contoh 1 Lembar (Test Print)
+                  </Button>
+                </div>
+
               </div>
 
-              <div className="flex items-center gap-3 pt-1">
-                <label className="flex items-center gap-2 text-xs font-medium cursor-pointer text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={templateShowAgent}
-                    onChange={(e) => setTemplateShowAgent(e.target.checked)}
-                    className="w-4 h-4 rounded text-indigo-600"
-                  />
-                  <span>Tampilkan Label Nama Agen (AGEN: {agent.name.toUpperCase()})</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Live Preview Box */}
-            <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Pratinjau Langsung (Live Preview):</span>
-              </Label>
-              <div className="p-4 bg-muted/60 border border-border/60 rounded-xl flex justify-center items-center overflow-x-auto min-h-[140px]">
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: generateSingleVoucherHtml(
-                      { mikrotik_username: '6jsxwg6f', packages: { price: 5000 } },
-                      0,
-                      {
-                        template: selectedTemplate,
-                        header: templateHeader,
-                        portal: templatePortal,
-                        showAgent: templateShowAgent,
-                        agentName: agent.name
-                      }
-                    )
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1 rounded-xl font-semibold gap-2"
-                onClick={() => {
-                  handlePrint([{ mikrotik_username: '6jsxwg6f', packages: { price: 5000 } }], selectedTemplate)
-                }}
-              >
-                <Printer className="w-4 h-4" />
-                Cetak Contoh Voucher (Test Print)
-              </Button>
-              <Button
-                className="flex-1 bg-[#00A76F] hover:bg-[#007867] text-white rounded-xl font-semibold gap-2 shadow-sm"
-                onClick={() => {
-                  saveTemplateConfig(selectedTemplate, templateHeader, templatePortal, templateShowAgent)
-                  setIsTemplateDialogOpen(false)
-                }}
-              >
-                <Check className="w-4 h-4" />
-                Simpan Sebagai Template Aktif
-              </Button>
             </div>
           </div>
         </DialogContent>
